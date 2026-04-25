@@ -62,6 +62,12 @@ extension Date {
         Calendar.current.dateInterval(of: .hour, for: self)?.start ?? self
     }
 
+    func nextBucketBoundary(interval: TimeInterval) -> Date {
+        guard interval > 0 else { return self }
+        let nextInterval = ceil(timeIntervalSince1970 / interval) * interval
+        return Date(timeIntervalSince1970: nextInterval)
+    }
+
     var displayHour: String {
         Self.hourFormatter.string(from: self)
     }

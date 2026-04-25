@@ -3,13 +3,17 @@ import SwiftUI
 struct MacContentView: View {
     @EnvironmentObject private var store: HandTrackStore
     @StateObject private var viewModel = MacDashboardViewModel()
+    @State private var isShowingSettings = false
     @State private var exportStatus = ""
 
     var body: some View {
+        let bucketInterval: TimeInterval = 5 * 60
+        let chartStart = Date().startOfHour
+        let chartEnd = max(Date().nextBucketBoundary(interval: bucketInterval), chartStart.addingTimeInterval(bucketInterval))
         let recentBuckets = store.keystrokeBuckets(
-            from: Date().addingTimeInterval(-60 * 60),
-            to: Date(),
-            interval: 5 * 60
+            from: chartStart,
+            to: chartEnd,
+            interval: bucketInterval
         )
 
         ScrollView {
@@ -20,9 +24,14 @@ struct MacContentView: View {
                             .font(.largeTitle.bold())
                         Text(viewModel.syncStatus)
                             .foregroundStyle(.secondary)
-                        Text("If key counts do not change, enable Input Monitoring for this app or Xcode, then rerun.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text(viewModel.keyTrackingStatus)
+                            .foregroundStyle(viewModel.needsInputMonitoringPermission ? .orange : .secondary)
+                        if viewModel.needsInputMonitoringPermission {
+                            Button("Enable Input Monitoring") {
+                                viewModel.openInputMonitoringSettings()
+                            }
+                            .buttonStyle(.link)
+                        }
                         Text("On iPhone, enter this Mac's Wi-Fi IP or hostname. Sync uses port 8787.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -30,15 +39,19 @@ struct MacContentView: View {
 
                     Spacer()
 
-                    HStack {
-                        Button("Export CSV") {
-                            exportCSV()
-                        }
-
-                        Button("Open Data Folder") {
-                            store.openStorageDirectory()
-                        }
+                    Button {
+                        isShowingSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                            .labelStyle(.iconOnly)
                     }
+                    .help("Settings")
+                }
+
+                if !exportStatus.isEmpty {
+                    Text(exportStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 16) {
@@ -50,16 +63,10 @@ struct MacContentView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Keystrokes Last Hour")
+                    Text("Keystrokes This Hour")
                         .font(.headline)
                     KeystrokeBarChart(buckets: recentBuckets)
-                    Text("5-minute buckets. Older raw keystrokes are kept for one year, then compacted into hourly summaries.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if !exportStatus.isEmpty {
-                    Text(exportStatus)
+                    Text("5-minute buckets")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -99,16 +106,62 @@ struct MacContentView: View {
         .onDisappear {
             viewModel.stop()
         }
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(
+                exportStatus: exportStatus,
+                exportCSV: exportCSV,
+                openDataFolder: store.openStorageDirectory
+            )
+        }
     }
 
     private func exportCSV() {
         do {
             let exportDirectory = try store.exportCSVFiles()
-            exportStatus = "Exported CSV files to \(exportDirectory.lastPathComponent)"
+            exportStatus = "Exported to \(exportDirectory.lastPathComponent)"
             store.openDirectory(exportDirectory)
         } catch {
             exportStatus = "Export failed: \(error.localizedDescription)"
         }
+    }
+}
+
+private struct SettingsView: View {
+    let exportStatus: String
+    let exportCSV: () -> Void
+    let openDataFolder: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Settings")
+                    .font(.title2.bold())
+                Spacer()
+                Button("Done") {
+                    dismiss()
+                }
+            }
+
+            Button("Export CSV") {
+                exportCSV()
+            }
+
+            Button("Open Data Folder") {
+                openDataFolder()
+            }
+
+            if !exportStatus.isEmpty {
+                Text(exportStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(24)
+        .frame(width: 360, height: 220)
     }
 }
 
