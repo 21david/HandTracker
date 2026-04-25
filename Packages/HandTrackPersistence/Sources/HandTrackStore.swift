@@ -16,6 +16,9 @@ final class HandTrackStore: ObservableObject {
     private let databaseURL: URL
     private let decoder: JSONDecoder
     private var database: OpaquePointer?
+    private var lastRetentionRun = Date.distantPast
+
+    private static let rawKeystrokeRetention: TimeInterval = 365 * 24 * 60 * 60
 
     init(storageDirectory: URL? = nil) {
         let baseDirectory = storageDirectory ?? Self.defaultStorageDirectory()
@@ -115,6 +118,7 @@ final class HandTrackStore: ObservableObject {
             try openDatabase()
             try createSchema()
             try migrateJSONIfNeeded()
+            enforceKeystrokeRetentionIfNeeded(force: true)
             hourlyLogs = try loadHourlyLogs()
         } catch {
             hourlyLogs = []
@@ -150,6 +154,13 @@ final class HandTrackStore: ObservableObject {
             CREATE TABLE IF NOT EXISTS keystroke_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp REAL NOT NULL
+            );
+            """)
+
+        try execute("""
+            CREATE TABLE IF NOT EXISTS keystroke_hourly_summaries (
+                hour_start REAL PRIMARY KEY NOT NULL,
+                key_count INTEGER NOT NULL
             );
             """)
 
@@ -263,8 +274,51 @@ final class HandTrackStore: ObservableObject {
 
             sqlite3_bind_double(statement, 1, event.timestamp.timeIntervalSince1970)
             try stepDone(statement)
+            enforceKeystrokeRetentionIfNeeded()
         } catch {
             print("Failed to save keystroke: \(error)")
+        }
+    }
+
+    private func enforceKeystrokeRetentionIfNeeded(force: Bool = false) {
+        guard force || Date().timeIntervalSince(lastRetentionRun) > 24 * 60 * 60 else { return }
+        lastRetentionRun = Date()
+
+        let cutoff = Date().addingTimeInterval(-Self.rawKeystrokeRetention)
+        do {
+            try compactKeystrokes(olderThan: cutoff)
+        } catch {
+            print("Failed to compact old keystrokes: \(error)")
+        }
+    }
+
+    private func compactKeystrokes(olderThan cutoff: Date) throws {
+        let cutoffTime = cutoff.timeIntervalSince1970
+
+        try execute("BEGIN TRANSACTION;")
+        do {
+            let summarizeStatement = try prepare("""
+                INSERT INTO keystroke_hourly_summaries (hour_start, key_count)
+                SELECT CAST(timestamp / 3600 AS INTEGER) * 3600 AS hour_start, COUNT(*) AS key_count
+                FROM keystroke_events
+                WHERE timestamp < ?
+                GROUP BY hour_start
+                ON CONFLICT(hour_start) DO UPDATE SET
+                    key_count = keystroke_hourly_summaries.key_count + excluded.key_count;
+                """)
+            defer { sqlite3_finalize(summarizeStatement) }
+            sqlite3_bind_double(summarizeStatement, 1, cutoffTime)
+            try stepDone(summarizeStatement)
+
+            let deleteStatement = try prepare("DELETE FROM keystroke_events WHERE timestamp < ?;")
+            defer { sqlite3_finalize(deleteStatement) }
+            sqlite3_bind_double(deleteStatement, 1, cutoffTime)
+            try stepDone(deleteStatement)
+
+            try execute("COMMIT;")
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
         }
     }
 

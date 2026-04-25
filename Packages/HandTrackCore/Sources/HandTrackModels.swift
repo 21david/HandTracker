@@ -46,6 +46,13 @@ struct KeystrokeEvent: Identifiable, Codable, Hashable {
     }
 }
 
+struct KeystrokeBucket: Identifiable, Hashable {
+    var id: Date { start }
+    var start: Date
+    var end: Date
+    var count: Int
+}
+
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
