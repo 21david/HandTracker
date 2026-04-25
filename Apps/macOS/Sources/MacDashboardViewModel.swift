@@ -6,6 +6,7 @@ final class MacDashboardViewModel: ObservableObject {
     @Published private(set) var syncStatus = "Starting..."
     @Published private(set) var keyTrackingStatus = "Starting key tracking..."
     @Published private(set) var needsInputMonitoringPermission = false
+    @Published private(set) var detectedKeysThisRun = 0
 
     private let monitor = KeystrokeMonitor()
     private var syncServer: HandTrackSyncServer?
@@ -13,6 +14,7 @@ final class MacDashboardViewModel: ObservableObject {
     func start(store: HandTrackStore) {
         monitor.onKeystroke = { [weak store] in
             Task { @MainActor in
+                self.detectedKeysThisRun += 1
                 store?.recordKeystroke()
             }
         }
@@ -50,5 +52,10 @@ final class MacDashboardViewModel: ObservableObject {
         syncServer = nil
         syncStatus = "Stopped"
         keyTrackingStatus = "Key tracking: stopped"
+    }
+
+    func recordDiagnosticKeystroke(store: HandTrackStore) {
+        detectedKeysThisRun += 1
+        store.recordKeystroke()
     }
 }

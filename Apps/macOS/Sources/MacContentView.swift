@@ -63,6 +63,7 @@ struct MacContentView: View {
 
                 HStack(spacing: 16) {
                     StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
+                    StatCard(title: "Detected This Run", value: "\(viewModel.detectedKeysThisRun)")
                     StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
                     StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
                 }
@@ -116,6 +117,9 @@ struct MacContentView: View {
         .sheet(isPresented: $isShowingSettings) {
             SettingsView(
                 exportStatus: exportStatus,
+                recordDiagnosticKey: {
+                    viewModel.recordDiagnosticKeystroke(store: store)
+                },
                 exportCSV: exportCSV,
                 openDataFolder: store.openStorageDirectory
             )
@@ -135,6 +139,7 @@ struct MacContentView: View {
 
 private struct SettingsView: View {
     let exportStatus: String
+    let recordDiagnosticKey: () -> Void
     let exportCSV: () -> Void
     let openDataFolder: () -> Void
 
@@ -159,6 +164,10 @@ private struct SettingsView: View {
                 openDataFolder()
             }
 
+            Button("Record Test Keystroke") {
+                recordDiagnosticKey()
+            }
+
             if !exportStatus.isEmpty {
                 Text(exportStatus)
                     .font(.caption)
@@ -168,7 +177,7 @@ private struct SettingsView: View {
             Spacer()
         }
         .padding(24)
-        .frame(width: 360, height: 220)
+        .frame(width: 360, height: 260)
     }
 }
 
