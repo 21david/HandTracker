@@ -9,5 +9,6 @@ struct HandTrackMacApp: App {
             MacContentView()
                 .environmentObject(store)
         }
+        .defaultSize(width: 900, height: 760)
     }
 }

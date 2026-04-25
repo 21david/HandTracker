@@ -86,6 +86,18 @@ final class HandTrackStore: ObservableObject {
         hourlyLogs.filter { $0.syncStatus == .pending }
     }
 
+    func recentHourlyLogs(limit: Int? = nil) -> [HourlyHandLog] {
+        let sortedLogs = hourlyLogs.sorted {
+            if $0.hourStart == $1.hourStart {
+                return $0.updatedAt > $1.updatedAt
+            }
+            return $0.hourStart > $1.hourStart
+        }
+
+        guard let limit else { return sortedLogs }
+        return Array(sortedLogs.prefix(limit))
+    }
+
     func recordKeystroke(at timestamp: Date = Date()) {
         insertKeystroke(KeystrokeEvent(timestamp: timestamp))
         objectWillChange.send()

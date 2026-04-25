@@ -12,82 +12,87 @@ struct MacContentView: View {
             interval: 5 * 60
         )
 
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("HandTrack Mac")
-                        .font(.largeTitle.bold())
-                    Text(viewModel.syncStatus)
-                        .foregroundStyle(.secondary)
-                    Text("On iPhone, enter this Mac's Wi-Fi IP or hostname. Sync uses port 8787.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("HandTrack Mac")
+                            .font(.largeTitle.bold())
+                        Text(viewModel.syncStatus)
+                            .foregroundStyle(.secondary)
+                        Text("If key counts do not change, enable Input Monitoring for this app or Xcode, then rerun.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("On iPhone, enter this Mac's Wi-Fi IP or hostname. Sync uses port 8787.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    HStack {
+                        Button("Export CSV") {
+                            exportCSV()
+                        }
+
+                        Button("Open Data Folder") {
+                            store.openStorageDirectory()
+                        }
+                    }
+                }
+
+                HStack(spacing: 16) {
+                    StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
+                    StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
+                    StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Keystrokes Last Hour")
+                        .font(.headline)
+                    KeystrokeBarChart(buckets: recentBuckets)
+                    Text("5-minute buckets. Older raw keystrokes are kept for one year, then compacted into hourly summaries.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Spacer()
-
-                HStack {
-                    Button("Export CSV") {
-                        exportCSV()
-                    }
-
-                    Button("Open Data Folder") {
-                        store.openStorageDirectory()
-                    }
-                }
-            }
-
-            HStack(spacing: 16) {
-                StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
-                StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
-                StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Keystrokes Last Hour")
-                    .font(.headline)
-                KeystrokeBarChart(buckets: recentBuckets)
-                Text("5-minute buckets. Older raw keystrokes are kept for one year, then compacted into hourly summaries.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !exportStatus.isEmpty {
-                Text(exportStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Recent iOS Logs")
-                    .font(.headline)
-
-                if store.hourlyLogs.isEmpty {
-                    Text("No iPhone logs received yet.")
+                if !exportStatus.isEmpty {
+                    Text(exportStatus)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                } else {
-                    List(store.hourlyLogs.prefix(8)) { log in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(log.hourStart.displayHour)
-                                .font(.headline)
-                            Text("Pain \(log.painLevel), \(log.minutesHandsUsed) min hand use")
-                                .foregroundStyle(.secondary)
-                            if !log.journalEntry.isEmpty {
-                                Text(log.journalEntry)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .frame(minHeight: 220)
                 }
-            }
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Recent iOS Logs")
+                        .font(.headline)
+
+                    if store.hourlyLogs.isEmpty {
+                        Text("No iPhone logs received yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        List(store.recentHourlyLogs(limit: 8)) { log in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(log.hourStart.displayHour)
+                                    .font(.headline)
+                                Text("Pain \(log.painLevel), \(log.minutesHandsUsed) min hand use")
+                                    .foregroundStyle(.secondary)
+                                if !log.journalEntry.isEmpty {
+                                    Text(log.journalEntry)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .frame(minHeight: 240)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(24)
         }
-        .padding(24)
-        .frame(minWidth: 720, minHeight: 520)
+        .frame(minWidth: 820, minHeight: 700)
         .onAppear {
             viewModel.start(store: store)
         }

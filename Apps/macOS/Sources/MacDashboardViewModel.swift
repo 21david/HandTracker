@@ -14,13 +14,15 @@ final class MacDashboardViewModel: ObservableObject {
                 store?.recordKeystroke()
             }
         }
-        monitor.start()
+        let isMonitoring = monitor.start()
 
         let server = HandTrackSyncServer(store: store)
         server.start()
         syncServer = server
 
-        syncStatus = "Recording keystrokes. Sync server runs on port 8787 while this app is open."
+        syncStatus = isMonitoring
+            ? "Recording keystrokes. Sync server runs on port 8787 while this app is open."
+            : "Key tracking did not start. Check Input Monitoring permission in System Settings."
     }
 
     func stop() {

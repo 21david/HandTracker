@@ -6,63 +6,43 @@ import Foundation
 final class KeystrokeMonitor {
     var onKeystroke: (() -> Void)?
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
 
     var isMonitoring: Bool {
-        eventTap != nil
+        localMonitor != nil || globalMonitor != nil
     }
 
-    func start() {
-        guard eventTap == nil else { return }
+    func start() -> Bool {
+        guard !isMonitoring else { return true }
 
-        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
-        let callback: CGEventTapCallBack = { _, type, event, refcon in
-            guard type == .keyDown,
-                  let refcon else {
-                return Unmanaged.passUnretained(event)
-            }
-
-            let monitor = Unmanaged<KeystrokeMonitor>
-                .fromOpaque(refcon)
-                .takeUnretainedValue()
-            monitor.onKeystroke?()
-            return Unmanaged.passUnretained(event)
+        if !CGPreflightListenEventAccess() {
+            CGRequestListenEventAccess()
         }
 
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: callback,
-            userInfo: refcon
-        ) else {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
-            return
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.onKeystroke?()
+            return event
         }
 
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-
-        if let runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+            self?.onKeystroke?()
         }
+
+        return isMonitoring
     }
 
     func stop() {
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
         }
 
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
         }
 
-        eventTap = nil
-        runLoopSource = nil
+        localMonitor = nil
+        globalMonitor = nil
     }
 
     deinit {
