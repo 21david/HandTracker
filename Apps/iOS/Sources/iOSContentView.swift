@@ -3,12 +3,18 @@ import SwiftUI
 struct iOSContentView: View {
     @EnvironmentObject private var store: HandTrackStore
     @AppStorage("macSyncHost") private var macSyncHost = ""
+    @FocusState private var focusedField: Field?
 
     @State private var painLevel = 0
     @State private var minutesHandsUsed = 0
     @State private var journalEntry = ""
     @State private var statusMessage = "Ready"
     @State private var isSyncing = false
+
+    private enum Field {
+        case journal
+        case macHost
+    }
 
     var body: some View {
         NavigationStack {
@@ -25,6 +31,7 @@ struct iOSContentView: View {
                     Stepper("Hands used: \(minutesHandsUsed) min", value: $minutesHandsUsed, in: 0...60)
 
                     TextEditor(text: $journalEntry)
+                        .focused($focusedField, equals: .journal)
                         .frame(minHeight: 120)
                         .overlay(alignment: .topLeading) {
                             if journalEntry.isEmpty {
@@ -36,6 +43,7 @@ struct iOSContentView: View {
                         }
 
                     Button("Save Current Hour Log") {
+                        focusedField = nil
                         saveLog()
                     }
                     .disabled(journalEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -54,6 +62,7 @@ struct iOSContentView: View {
 
                 Section("Sync To Mac") {
                     TextField("Mac IP or hostname", text: $macSyncHost)
+                        .focused($focusedField, equals: .macHost)
                         .textContentType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -66,6 +75,7 @@ struct iOSContentView: View {
                     }
 
                     Button(isSyncing ? "Syncing..." : "Send Pending Logs") {
+                        focusedField = nil
                         Task {
                             await syncPendingLogs()
                         }
@@ -100,6 +110,15 @@ struct iOSContentView: View {
                 }
             }
             .navigationTitle("HandTrack")
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        focusedField = nil
+                    }
+                }
+            }
         }
     }
 
