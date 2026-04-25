@@ -46,13 +46,6 @@ struct KeystrokeEvent: Identifiable, Codable, Hashable {
     }
 }
 
-struct KeystrokeBucket: Identifiable, Hashable {
-    var id: Date { start }
-    var start: Date
-    var end: Date
-    var count: Int
-}
-
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
@@ -60,12 +53,6 @@ struct SyncResponse: Codable {
 extension Date {
     var startOfHour: Date {
         Calendar.current.dateInterval(of: .hour, for: self)?.start ?? self
-    }
-
-    func startOfBucket(interval: TimeInterval) -> Date {
-        guard interval > 0 else { return self }
-        let bucketStart = floor(timeIntervalSince1970 / interval) * interval
-        return Date(timeIntervalSince1970: bucketStart)
     }
 
     var displayHour: String {
