@@ -5,8 +5,8 @@ import Foundation
 
 enum KeystrokeMonitorStatus {
     case global
-    case localFallback
-    case stopped
+    case localFallback(reason: String)
+    case stopped(reason: String)
 }
 
 final class KeystrokeMonitor {
@@ -22,19 +22,30 @@ final class KeystrokeMonitor {
 
     func start() -> KeystrokeMonitorStatus {
         guard !isMonitoring else {
-            return eventTap == nil ? .localFallback : .global
+            return eventTap == nil ? .localFallback(reason: "already using local fallback") : .global
         }
 
-        if startGlobalEventTap() {
+        switch startGlobalEventTap() {
+        case .success:
             return .global
-        }
+        case .failure(let firstFailure):
+            if CGRequestListenEventAccess() {
+                switch startGlobalEventTap() {
+                case .success:
+                    return .global
+                case .failure(let secondFailure):
+                    startLocalFallback()
+                    return isMonitoring
+                        ? .localFallback(reason: secondFailure)
+                        : .stopped(reason: secondFailure)
+                }
+            }
 
-        if CGRequestListenEventAccess(), startGlobalEventTap() {
-            return .global
+            startLocalFallback()
+            return isMonitoring
+                ? .localFallback(reason: firstFailure)
+                : .stopped(reason: firstFailure)
         }
-
-        startLocalFallback()
-        return isMonitoring ? .localFallback : .stopped
     }
 
     func openInputMonitoringSettings() {
@@ -43,9 +54,7 @@ final class KeystrokeMonitor {
         }
     }
 
-    private func startGlobalEventTap() -> Bool {
-        guard CGPreflightListenEventAccess() else { return false }
-
+    private func startGlobalEventTap() -> Result<Void, String> {
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else {
@@ -63,27 +72,44 @@ final class KeystrokeMonitor {
         }
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: callback,
-            userInfo: refcon
-        ) else {
-            return false
+
+        let tapLocations: [CGEventTapLocation] = [
+            .cgSessionEventTap,
+            .cgAnnotatedSessionEventTap,
+            .cghidEventTap
+        ]
+
+        var tap: CFMachPort?
+        for tapLocation in tapLocations {
+            tap = CGEvent.tapCreate(
+                tap: tapLocation,
+                place: .headInsertEventTap,
+                options: .listenOnly,
+                eventsOfInterest: mask,
+                callback: callback,
+                userInfo: refcon
+            )
+
+            if tap != nil {
+                break
+            }
+        }
+
+        guard let tap else {
+            let permissionState = CGPreflightListenEventAccess() ? "granted" : "not granted"
+            return .failure("macOS denied the global event tap; Input Monitoring is \(permissionState)")
         }
 
         guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
             CFMachPortInvalidate(tap)
-            return false
+            return .failure("could not attach the event tap to the main run loop")
         }
 
         eventTap = tap
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        return true
+        return .success(())
     }
 
     private func startLocalFallback() {

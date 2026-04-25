@@ -27,11 +27,11 @@ final class MacDashboardViewModel: ObservableObject {
         case .global:
             keyTrackingStatus = "Key tracking: global"
             needsInputMonitoringPermission = false
-        case .localFallback:
-            keyTrackingStatus = "Key tracking: app window only"
+        case .localFallback(let reason):
+            keyTrackingStatus = "Key tracking: app window only (\(reason))"
             needsInputMonitoringPermission = true
-        case .stopped:
-            keyTrackingStatus = "Key tracking: stopped"
+        case .stopped(let reason):
+            keyTrackingStatus = "Key tracking: stopped (\(reason))"
             needsInputMonitoringPermission = true
         }
     }
