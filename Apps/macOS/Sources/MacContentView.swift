@@ -3,13 +3,8 @@ import SwiftUI
 struct MacContentView: View {
     @EnvironmentObject private var store: HandTrackStore
     @StateObject private var viewModel = MacDashboardViewModel()
-    @State private var chartNow = Date()
-
-    private let chartRefreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        let buckets = store.recentKeystrokeBuckets(now: chartNow)
-
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 VStack(alignment: .leading) {
@@ -40,7 +35,7 @@ struct MacContentView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Keystrokes")
                     .font(.headline)
-                KeystrokeBarChart(buckets: buckets)
+                KeystrokeBarChart(buckets: viewModel.chartBuckets)
                 Text("Last 12 five-minute intervals, fixed scale: 300 words")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -78,9 +73,6 @@ struct MacContentView: View {
         .frame(minWidth: 720, minHeight: 520)
         .onAppear {
             viewModel.start(store: store)
-        }
-        .onReceive(chartRefreshTimer) { now in
-            chartNow = now
         }
         .onDisappear {
             viewModel.stop()
