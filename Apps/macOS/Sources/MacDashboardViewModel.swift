@@ -24,9 +24,12 @@ final class MacDashboardViewModel: ObservableObject {
 
         syncStatus = "Sync server runs on port 8787 while this app is open."
         switch monitorStatus {
-        case .global:
-            keyTrackingStatus = "Key tracking: global"
+        case .eventTap:
+            keyTrackingStatus = "Key tracking: event tap"
             needsInputMonitoringPermission = false
+        case .globalMonitor(let reason):
+            keyTrackingStatus = "Key tracking: monitor fallback (\(reason))"
+            needsInputMonitoringPermission = true
         case .stopped(let reason):
             keyTrackingStatus = "Key tracking: stopped (\(reason))"
             needsInputMonitoringPermission = true
@@ -35,6 +38,10 @@ final class MacDashboardViewModel: ObservableObject {
 
     func openInputMonitoringSettings() {
         monitor.openInputMonitoringSettings()
+    }
+
+    func openAccessibilitySettings() {
+        monitor.openAccessibilitySettings()
     }
 
     func stop() {

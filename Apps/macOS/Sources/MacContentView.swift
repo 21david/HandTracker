@@ -27,10 +27,17 @@ struct MacContentView: View {
                         Text(viewModel.keyTrackingStatus)
                             .foregroundStyle(viewModel.needsInputMonitoringPermission ? .orange : .secondary)
                         if viewModel.needsInputMonitoringPermission {
-                            Button("Enable Input Monitoring") {
-                                viewModel.openInputMonitoringSettings()
+                            HStack {
+                                Button("Input Monitoring") {
+                                    viewModel.openInputMonitoringSettings()
+                                }
+                                .buttonStyle(.link)
+
+                                Button("Accessibility") {
+                                    viewModel.openAccessibilitySettings()
+                                }
+                                .buttonStyle(.link)
                             }
-                            .buttonStyle(.link)
                         }
                         Text("On iPhone, enter this Mac's Wi-Fi IP or hostname. Sync uses port 8787.")
                             .font(.caption)
