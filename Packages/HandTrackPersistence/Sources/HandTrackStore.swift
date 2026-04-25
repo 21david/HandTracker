@@ -99,6 +99,35 @@ final class HandTrackStore: ObservableObject {
         return words / elapsedMinutes
     }
 
+    func recentKeystrokeBuckets(
+        now: Date = Date(),
+        bucketCount: Int = 12,
+        interval: TimeInterval = 5 * 60
+    ) -> [KeystrokeBucket] {
+        let safeBucketCount = max(bucketCount, 1)
+        let currentBucketStart = now.startOfBucket(interval: interval)
+        let firstBucketStart = currentBucketStart.addingTimeInterval(-Double(safeBucketCount - 1) * interval)
+        let chartEnd = currentBucketStart.addingTimeInterval(interval)
+        var counts = Array(repeating: 0, count: safeBucketCount)
+
+        for event in keystrokeEvents.reversed() {
+            guard event.timestamp < chartEnd else { continue }
+            guard event.timestamp >= firstBucketStart else { break }
+
+            let index = Int(event.timestamp.timeIntervalSince(firstBucketStart) / interval)
+            if counts.indices.contains(index) {
+                counts[index] += 1
+            }
+        }
+
+        return counts.indices.map { index in
+            KeystrokeBucket(
+                start: firstBucketStart.addingTimeInterval(Double(index) * interval),
+                count: counts[index]
+            )
+        }
+    }
+
     func openStorageDirectory() {
         #if os(macOS)
         NSWorkspace.shared.open(storageDirectory)

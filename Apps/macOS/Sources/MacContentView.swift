@@ -3,8 +3,13 @@ import SwiftUI
 struct MacContentView: View {
     @EnvironmentObject private var store: HandTrackStore
     @StateObject private var viewModel = MacDashboardViewModel()
+    @State private var chartNow = Date()
+
+    private let chartRefreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        let buckets = store.recentKeystrokeBuckets(now: chartNow)
+
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 VStack(alignment: .leading) {
@@ -28,6 +33,17 @@ struct MacContentView: View {
                 StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
                 StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
                 StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Keystrokes")
+                    .font(.headline)
+                KeystrokeBarChart(buckets: buckets)
+                Text("Last 12 five-minute intervals, fixed scale: 300 words")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Divider()
@@ -63,6 +79,9 @@ struct MacContentView: View {
         .onAppear {
             viewModel.start(store: store)
         }
+        .onReceive(chartRefreshTimer) { now in
+            chartNow = now
+        }
         .onDisappear {
             viewModel.stop()
         }
@@ -84,5 +103,43 @@ private struct StatCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct KeystrokeBarChart: View {
+    let buckets: [KeystrokeBucket]
+
+    private let maxKeystrokes = 1_500
+    private let maxBarHeight: CGFloat = 96
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            ForEach(Array(buckets.enumerated()), id: \.element.id) { index, bucket in
+                VStack(spacing: 4) {
+                    Text("\(bucket.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(index == buckets.indices.last ? .blue : .secondary)
+                        .frame(height: barHeight(for: bucket.count))
+                        .opacity(bucket.count == 0 ? 0.25 : 0.9)
+
+                    Text(bucket.start.displayTime)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 140)
+        .padding(.vertical, 6)
+    }
+
+    private func barHeight(for count: Int) -> CGFloat {
+        let clampedCount = min(max(count, 0), maxKeystrokes)
+        let fraction = CGFloat(clampedCount) / CGFloat(maxKeystrokes)
+        return max(fraction * maxBarHeight, count == 0 ? 2 : 4)
     }
 }
