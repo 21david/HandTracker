@@ -9,6 +9,10 @@ enum KeystrokeMonitorStatus {
     case stopped(reason: String)
 }
 
+private struct KeystrokeMonitorError: Error {
+    let message: String
+}
+
 final class KeystrokeMonitor {
     var onKeystroke: (() -> Void)?
 
@@ -36,15 +40,15 @@ final class KeystrokeMonitor {
                 case .failure(let secondFailure):
                     startLocalFallback()
                     return isMonitoring
-                        ? .localFallback(reason: secondFailure)
-                        : .stopped(reason: secondFailure)
+                        ? .localFallback(reason: secondFailure.message)
+                        : .stopped(reason: secondFailure.message)
                 }
             }
 
             startLocalFallback()
             return isMonitoring
-                ? .localFallback(reason: firstFailure)
-                : .stopped(reason: firstFailure)
+                ? .localFallback(reason: firstFailure.message)
+                : .stopped(reason: firstFailure.message)
         }
     }
 
@@ -54,7 +58,7 @@ final class KeystrokeMonitor {
         }
     }
 
-    private func startGlobalEventTap() -> Result<Void, String> {
+    private func startGlobalEventTap() -> Result<Void, KeystrokeMonitorError> {
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else {
@@ -97,12 +101,12 @@ final class KeystrokeMonitor {
 
         guard let tap else {
             let permissionState = CGPreflightListenEventAccess() ? "granted" : "not granted"
-            return .failure("macOS denied the global event tap; Input Monitoring is \(permissionState)")
+            return .failure(KeystrokeMonitorError(message: "macOS denied the global event tap; Input Monitoring is \(permissionState)"))
         }
 
         guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
             CFMachPortInvalidate(tap)
-            return .failure("could not attach the event tap to the main run loop")
+            return .failure(KeystrokeMonitorError(message: "could not attach the event tap to the main run loop"))
         }
 
         eventTap = tap
