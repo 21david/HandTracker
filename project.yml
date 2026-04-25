@@ -9,7 +9,7 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: MJ6UJ6MF3K
+    DEVELOPMENT_TEAM: ""
 targets:
   HandTrackiOS:
     type: application
@@ -25,6 +25,7 @@ targets:
       - sdk: libsqlite3.tbd
     settings:
       base:
+        DEVELOPMENT_TEAM: MJ6UJ6MF3K
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.ios
         INFOPLIST_FILE: Apps/iOS/Resources/Info.plist
   HandTrackMac:
@@ -42,6 +43,7 @@ targets:
       - sdk: libsqlite3.tbd
     settings:
       base:
+        DEVELOPMENT_TEAM: ""
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.mac
         INFOPLIST_FILE: Apps/macOS/Resources/Info.plist
 schemes:
