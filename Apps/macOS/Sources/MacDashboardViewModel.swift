@@ -17,7 +17,6 @@ final class MacDashboardViewModel: ObservableObject {
         chartBuckets = Self.buckets(from: store.keystrokeEvents, now: Date())
         monitor.onKeystroke = { [weak store] in
             Task { @MainActor in
-                self.recordKeystrokeInChart(at: Date())
                 store?.recordKeystroke()
             }
         }
@@ -29,11 +28,12 @@ final class MacDashboardViewModel: ObservableObject {
 
         syncStatus = "Recording keystrokes. Sync server runs on port 8787 while this app is open."
 
-        chartTimer = Timer.publish(every: 10, on: .main, in: .common)
+        chartTimer = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak self] now in
+            .sink { [weak self, weak store] now in
                 Task { @MainActor in
-                    self?.rollBucketsIfNeeded(now: now)
+                    guard let store else { return }
+                    self?.chartBuckets = Self.buckets(from: store.keystrokeEvents, now: now)
                 }
             }
     }
@@ -45,18 +45,6 @@ final class MacDashboardViewModel: ObservableObject {
         chartTimer?.cancel()
         chartTimer = nil
         syncStatus = "Stopped"
-    }
-
-    private func recordKeystrokeInChart(at timestamp: Date) {
-        rollBucketsIfNeeded(now: timestamp)
-        guard !chartBuckets.isEmpty else { return }
-        chartBuckets[chartBuckets.count - 1].count += 1
-    }
-
-    private func rollBucketsIfNeeded(now: Date) {
-        let latestStart = now.startOfBucket(interval: Self.bucketInterval)
-        guard chartBuckets.last?.start != latestStart else { return }
-        chartBuckets = Self.emptyBuckets(now: now)
     }
 
     private static func buckets(from events: [KeystrokeEvent], now: Date) -> [KeystrokeBucket] {
