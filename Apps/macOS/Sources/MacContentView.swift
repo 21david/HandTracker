@@ -33,6 +33,17 @@ struct MacContentView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
+                Text("Keystrokes")
+                    .font(.headline)
+                StaticKeystrokeBarPlot()
+                Text("12 five-minute intervals")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Recent iOS Logs")
                     .font(.headline)
 
@@ -84,5 +95,33 @@ private struct StatCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct StaticKeystrokeBarPlot: View {
+    private let barHeights: [CGFloat] = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            ForEach(Array(barHeights.enumerated()), id: \.offset) { index, height in
+                VStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(index == barHeights.indices.last ? .blue : .secondary)
+                        .frame(height: height)
+                        .opacity(0.25)
+
+                    Text(label(for: index))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 120)
+        .padding(.vertical, 6)
+    }
+
+    private func label(for index: Int) -> String {
+        index == barHeights.indices.last ? "now" : ""
     }
 }
