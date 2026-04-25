@@ -103,9 +103,52 @@ final class HandTrackStore: ObservableObject {
         return words / elapsedMinutes
     }
 
+    func keystrokeBuckets(from startDate: Date, to endDate: Date, interval: TimeInterval) -> [KeystrokeBucket] {
+        guard interval > 0, endDate > startDate else { return [] }
+
+        let bucketCount = Int(ceil(endDate.timeIntervalSince(startDate) / interval))
+        guard bucketCount > 0 else { return [] }
+
+        var counts = Array(repeating: 0, count: bucketCount)
+        addRawKeystrokeCounts(to: &counts, startDate: startDate, endDate: endDate, interval: interval)
+        addSummarizedKeystrokeCounts(to: &counts, startDate: startDate, endDate: endDate, interval: interval)
+
+        return counts.indices.map { index in
+            let start = startDate.addingTimeInterval(Double(index) * interval)
+            return KeystrokeBucket(
+                start: start,
+                end: min(start.addingTimeInterval(interval), endDate),
+                count: counts[index]
+            )
+        }
+    }
+
+    func exportCSVFiles() throws -> URL {
+        let exportDirectory = storageDirectory
+            .appendingPathComponent("Exports", isDirectory: true)
+            .appendingPathComponent("HandTrackExport-\(Self.exportTimestampFormatter.string(from: Date()))", isDirectory: true)
+
+        try FileManager.default.createDirectory(
+            at: exportDirectory,
+            withIntermediateDirectories: true
+        )
+
+        try exportHourlyLogs(to: exportDirectory.appendingPathComponent("hourly_logs.csv"))
+        try exportRawKeystrokes(to: exportDirectory.appendingPathComponent("keystroke_events.csv"))
+        try exportHourlyKeystrokeSummaries(to: exportDirectory.appendingPathComponent("keystroke_hourly_summaries.csv"))
+
+        return exportDirectory
+    }
+
     func openStorageDirectory() {
         #if os(macOS)
         NSWorkspace.shared.open(storageDirectory)
+        #endif
+    }
+
+    func openDirectory(_ url: URL) {
+        #if os(macOS)
+        NSWorkspace.shared.open(url)
         #endif
     }
 
@@ -336,6 +379,129 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    private func addRawKeystrokeCounts(
+        to counts: inout [Int],
+        startDate: Date,
+        endDate: Date,
+        interval: TimeInterval
+    ) {
+        do {
+            let statement = try prepare("""
+                SELECT CAST((timestamp - ?) / ? AS INTEGER) AS bucket_index, COUNT(*)
+                FROM keystroke_events
+                WHERE timestamp >= ? AND timestamp < ?
+                GROUP BY bucket_index;
+                """)
+            defer { sqlite3_finalize(statement) }
+
+            sqlite3_bind_double(statement, 1, startDate.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 2, interval)
+            sqlite3_bind_double(statement, 3, startDate.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 4, endDate.timeIntervalSince1970)
+
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let index = Int(sqlite3_column_int64(statement, 0))
+                guard counts.indices.contains(index) else { continue }
+                counts[index] += Int(sqlite3_column_int64(statement, 1))
+            }
+        } catch {
+            print("Failed to bucket raw keystrokes: \(error)")
+        }
+    }
+
+    private func addSummarizedKeystrokeCounts(
+        to counts: inout [Int],
+        startDate: Date,
+        endDate: Date,
+        interval: TimeInterval
+    ) {
+        do {
+            let statement = try prepare("""
+                SELECT CAST((hour_start - ?) / ? AS INTEGER) AS bucket_index, SUM(key_count)
+                FROM keystroke_hourly_summaries
+                WHERE hour_start >= ? AND hour_start < ?
+                GROUP BY bucket_index;
+                """)
+            defer { sqlite3_finalize(statement) }
+
+            sqlite3_bind_double(statement, 1, startDate.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 2, interval)
+            sqlite3_bind_double(statement, 3, startDate.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 4, endDate.timeIntervalSince1970)
+
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let index = Int(sqlite3_column_int64(statement, 0))
+                guard counts.indices.contains(index) else { continue }
+                counts[index] += Int(sqlite3_column_int64(statement, 1))
+            }
+        } catch {
+            print("Failed to bucket summarized keystrokes: \(error)")
+        }
+    }
+
+    private func exportHourlyLogs(to url: URL) throws {
+        let writer = try CSVWriter(url: url)
+        defer { writer.close() }
+
+        writer.write("id,hour_start,hour_start_unix,pain_level,minutes_hands_used,journal_entry,created_at,updated_at,sync_status\n")
+        for log in hourlyLogs.sorted(by: { $0.hourStart < $1.hourStart }) {
+            writer.write([
+                log.id.uuidString,
+                Self.csvDateFormatter.string(from: log.hourStart),
+                String(log.hourStart.timeIntervalSince1970),
+                String(log.painLevel),
+                String(log.minutesHandsUsed),
+                log.journalEntry,
+                Self.csvDateFormatter.string(from: log.createdAt),
+                Self.csvDateFormatter.string(from: log.updatedAt),
+                log.syncStatus.rawValue
+            ])
+        }
+    }
+
+    private func exportRawKeystrokes(to url: URL) throws {
+        let writer = try CSVWriter(url: url)
+        defer { writer.close() }
+
+        writer.write("id,timestamp,timestamp_unix\n")
+
+        let statement = try prepare("SELECT id, timestamp FROM keystroke_events ORDER BY timestamp ASC;")
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let id = sqlite3_column_int64(statement, 0)
+            let timestamp = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+            writer.write([
+                String(id),
+                Self.csvDateFormatter.string(from: timestamp),
+                String(timestamp.timeIntervalSince1970)
+            ])
+        }
+    }
+
+    private func exportHourlyKeystrokeSummaries(to url: URL) throws {
+        let writer = try CSVWriter(url: url)
+        defer { writer.close() }
+
+        writer.write("hour_start,hour_start_unix,key_count\n")
+
+        let statement = try prepare("""
+            SELECT hour_start, key_count
+            FROM keystroke_hourly_summaries
+            ORDER BY hour_start ASC;
+            """)
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let hourStart = Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+            writer.write([
+                Self.csvDateFormatter.string(from: hourStart),
+                String(hourStart.timeIntervalSince1970),
+                String(sqlite3_column_int64(statement, 1))
+            ])
+        }
+    }
+
     private func migrationValue(for key: String) throws -> String? {
         let statement = try prepare("SELECT value FROM migration_state WHERE key = ?;")
         defer { sqlite3_finalize(statement) }
@@ -397,6 +563,14 @@ final class HandTrackStore: ObservableObject {
     }
 
     private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    private static let csvDateFormatter = ISO8601DateFormatter()
+
+    private static let exportTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
 }
 
 private enum StoreError: LocalizedError {
@@ -410,5 +584,34 @@ private enum StoreError: LocalizedError {
         case .databaseError(let message):
             return message
         }
+    }
+}
+
+private final class CSVWriter {
+    private let handle: FileHandle
+
+    init(url: URL) throws {
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        self.handle = try FileHandle(forWritingTo: url)
+    }
+
+    func write(_ line: String) {
+        handle.write(Data(line.utf8))
+    }
+
+    func write(_ fields: [String]) {
+        write(fields.map(Self.escape).joined(separator: ",") + "\n")
+    }
+
+    func close() {
+        try? handle.close()
+    }
+
+    private static func escape(_ value: String) -> String {
+        guard value.contains(",") || value.contains("\"") || value.contains("\n") else {
+            return value
+        }
+
+        return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 }

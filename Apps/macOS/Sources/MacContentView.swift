@@ -3,8 +3,15 @@ import SwiftUI
 struct MacContentView: View {
     @EnvironmentObject private var store: HandTrackStore
     @StateObject private var viewModel = MacDashboardViewModel()
+    @State private var exportStatus = ""
 
     var body: some View {
+        let recentBuckets = store.keystrokeBuckets(
+            from: Date().addingTimeInterval(-60 * 60),
+            to: Date(),
+            interval: 5 * 60
+        )
+
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 VStack(alignment: .leading) {
@@ -19,8 +26,14 @@ struct MacContentView: View {
 
                 Spacer()
 
-                Button("Open Data Folder") {
-                    store.openStorageDirectory()
+                HStack {
+                    Button("Export CSV") {
+                        exportCSV()
+                    }
+
+                    Button("Open Data Folder") {
+                        store.openStorageDirectory()
+                    }
                 }
             }
 
@@ -31,6 +44,21 @@ struct MacContentView: View {
             }
 
             Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Keystrokes Last Hour")
+                    .font(.headline)
+                KeystrokeBarChart(buckets: recentBuckets)
+                Text("5-minute buckets. Older raw keystrokes are kept for one year, then compacted into hourly summaries.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !exportStatus.isEmpty {
+                Text(exportStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Recent iOS Logs")
@@ -67,6 +95,16 @@ struct MacContentView: View {
             viewModel.stop()
         }
     }
+
+    private func exportCSV() {
+        do {
+            let exportDirectory = try store.exportCSVFiles()
+            exportStatus = "Exported CSV files to \(exportDirectory.lastPathComponent)"
+            store.openDirectory(exportDirectory)
+        } catch {
+            exportStatus = "Export failed: \(error.localizedDescription)"
+        }
+    }
 }
 
 private struct StatCard: View {
@@ -84,5 +122,40 @@ private struct StatCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct KeystrokeBarChart: View {
+    let buckets: [KeystrokeBucket]
+
+    private var maxCount: Int {
+        max(buckets.map(\.count).max() ?? 0, 1)
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 4) {
+            ForEach(buckets) { bucket in
+                VStack(spacing: 4) {
+                    Text("\(bucket.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    RoundedRectangle(cornerRadius: 3)
+                        .frame(height: barHeight(for: bucket.count))
+                        .foregroundStyle(.blue)
+                    Text(bucket.start.displayTime)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(-45))
+                        .fixedSize()
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 150)
+        .padding(.vertical, 8)
+    }
+
+    private func barHeight(for count: Int) -> CGFloat {
+        max(CGFloat(count) / CGFloat(maxCount) * 90, count == 0 ? 2 : 8)
     }
 }
