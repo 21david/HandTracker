@@ -169,7 +169,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					368A3C67550B7B2EB66294DB = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = MJ6UJ6MF3K;
 						ProvisioningStyle = Automatic;
 					};
 					559D53F46209885B9FAA6F42 = {
@@ -317,6 +317,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/macOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -332,6 +333,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/macOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

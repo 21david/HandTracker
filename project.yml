@@ -38,6 +38,7 @@ targets:
       - Apps/macOS/Resources
     settings:
       base:
+        DEVELOPMENT_TEAM: MJ6UJ6MF3K
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.mac
         INFOPLIST_FILE: Apps/macOS/Resources/Info.plist
 schemes:
