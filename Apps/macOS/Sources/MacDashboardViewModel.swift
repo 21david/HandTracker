@@ -4,7 +4,7 @@ import Combine
 @MainActor
 final class MacDashboardViewModel: ObservableObject {
     @Published private(set) var syncStatus = "Starting..."
-    @Published private(set) var chartBuckets: [KeystrokeBucket] = Self.emptyBuckets(now: Date())
+    @Published private(set) var chartBuckets: [KeystrokeBucket] = []
 
     private let monitor = KeystrokeMonitor()
     private var syncServer: HandTrackSyncServer?
