@@ -1,0 +1,452 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		088AA0DD144372F7277FEDC5 /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */; };
+		2E7CF99307E27669255CB687 /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
+		3D16E292575937C6D0EA8F83 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
+		44FE79965F3AFD52882D17BF /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */; };
+		58DE2F1B66381255F78AC372 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63D8CC683C076EC281966D5 /* MacContentView.swift */; };
+		59158E26FF64D58755F83EDA /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
+		5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
+		6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */; };
+		6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */; };
+		6DBF27628AD133EBA4F8B0F7 /* HandTrackiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */; };
+		9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */; };
+		9CDFC87C04384BBDD32E769C /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
+		A03646486FC032B05E9E1EAE /* HourlyReminderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */; };
+		ADD9FF72ABBEF6A02E464FAE /* iOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */; };
+		D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncClient.swift; sourceTree = "<group>"; };
+		2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HourlyReminderManager.swift; sourceTree = "<group>"; };
+		345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardViewModel.swift; sourceTree = "<group>"; };
+		3FF81706D5FEE826182D099B /* HandTrackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackModels.swift; sourceTree = "<group>"; };
+		43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncServer.swift; sourceTree = "<group>"; };
+		4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackiOSApp.swift; sourceTree = "<group>"; };
+		4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackMacApp.swift; sourceTree = "<group>"; };
+		87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackStore.swift; sourceTree = "<group>"; };
+		881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeMonitor.swift; sourceTree = "<group>"; };
+		BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C63D8CC683C076EC281966D5 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
+		CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSContentView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0F5AAE1A42BEDA3FB5B1D407 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */,
+				BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1541B3D0FAB8E7A189683B77 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */,
+				C63D8CC683C076EC281966D5 /* MacContentView.swift */,
+				345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */,
+			);
+			name = Sources;
+			path = Apps/macOS/Sources;
+			sourceTree = "<group>";
+		};
+		206C4C4243470E5384292F22 = {
+			isa = PBXGroup;
+			children = (
+				335F2BAC809C82E62B17A4A7 /* Sources */,
+				1541B3D0FAB8E7A189683B77 /* Sources */,
+				8D2A91569840B4EAC8543F90 /* Sources */,
+				8CE084FB9040574B16829E45 /* Sources */,
+				96B156B02233DC89F27788A7 /* Sources */,
+				5EEC021E987F5A9B51965B31 /* Sources */,
+				0F5AAE1A42BEDA3FB5B1D407 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		335F2BAC809C82E62B17A4A7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */,
+				2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */,
+				E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */,
+			);
+			name = Sources;
+			path = Apps/iOS/Sources;
+			sourceTree = "<group>";
+		};
+		5EEC021E987F5A9B51965B31 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */,
+				43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */,
+			);
+			name = Sources;
+			path = Packages/HandTrackSync/Sources;
+			sourceTree = "<group>";
+		};
+		8CE084FB9040574B16829E45 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */,
+			);
+			name = Sources;
+			path = Packages/HandTrackMacInput/Sources;
+			sourceTree = "<group>";
+		};
+		8D2A91569840B4EAC8543F90 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				3FF81706D5FEE826182D099B /* HandTrackModels.swift */,
+			);
+			name = Sources;
+			path = Packages/HandTrackCore/Sources;
+			sourceTree = "<group>";
+		};
+		96B156B02233DC89F27788A7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */,
+			);
+			name = Sources;
+			path = Packages/HandTrackPersistence/Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		368A3C67550B7B2EB66294DB /* HandTrackMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5270D779CB823B995FBA2C2A /* Build configuration list for PBXNativeTarget "HandTrackMac" */;
+			buildPhases = (
+				B6F9E5DEA26EE046165CEBCC /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HandTrackMac;
+			packageProductDependencies = (
+			);
+			productName = HandTrackMac;
+			productReference = BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		559D53F46209885B9FAA6F42 /* HandTrackiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 58679B65D2570537D94702B7 /* Build configuration list for PBXNativeTarget "HandTrackiOS" */;
+			buildPhases = (
+				AD99FD52356453212ED906E3 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HandTrackiOS;
+			packageProductDependencies = (
+			);
+			productName = HandTrackiOS;
+			productReference = CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FBDD1F6A4D5C75EA93EA3DD0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					368A3C67550B7B2EB66294DB = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					559D53F46209885B9FAA6F42 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 498E3B2DA24AA7D1867E35CF /* Build configuration list for PBXProject "HandTrack" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 206C4C4243470E5384292F22;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				368A3C67550B7B2EB66294DB /* HandTrackMac */,
+				559D53F46209885B9FAA6F42 /* HandTrackiOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AD99FD52356453212ED906E3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2E7CF99307E27669255CB687 /* HandTrackModels.swift in Sources */,
+				59158E26FF64D58755F83EDA /* HandTrackStore.swift in Sources */,
+				3D16E292575937C6D0EA8F83 /* HandTrackSyncClient.swift in Sources */,
+				44FE79965F3AFD52882D17BF /* HandTrackSyncServer.swift in Sources */,
+				6DBF27628AD133EBA4F8B0F7 /* HandTrackiOSApp.swift in Sources */,
+				A03646486FC032B05E9E1EAE /* HourlyReminderManager.swift in Sources */,
+				ADD9FF72ABBEF6A02E464FAE /* iOSContentView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B6F9E5DEA26EE046165CEBCC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */,
+				9CDFC87C04384BBDD32E769C /* HandTrackModels.swift in Sources */,
+				D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */,
+				5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */,
+				088AA0DD144372F7277FEDC5 /* HandTrackSyncServer.swift in Sources */,
+				6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */,
+				58DE2F1B66381255F78AC372 /* MacContentView.swift in Sources */,
+				6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		41774A7A14F29760C5599904 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.david.handtrack.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		568E9CDD14223F2B30A45FCB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		63ED90B6AD5765CEECC728D6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Apps/macOS/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.david.handtrack.mac;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		D0CED5CD607B91990654B9AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Apps/macOS/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.david.handtrack.mac;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		F13225042FA96957C61E04C3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.david.handtrack.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		FBADF1408F748F24B0060F6A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		498E3B2DA24AA7D1867E35CF /* Build configuration list for PBXProject "HandTrack" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				568E9CDD14223F2B30A45FCB /* Debug */,
+				FBADF1408F748F24B0060F6A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5270D779CB823B995FBA2C2A /* Build configuration list for PBXNativeTarget "HandTrackMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				63ED90B6AD5765CEECC728D6 /* Debug */,
+				D0CED5CD607B91990654B9AA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		58679B65D2570537D94702B7 /* Build configuration list for PBXNativeTarget "HandTrackiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F13225042FA96957C61E04C3 /* Debug */,
+				41774A7A14F29760C5599904 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = FBDD1F6A4D5C75EA93EA3DD0 /* Project object */;
+}
