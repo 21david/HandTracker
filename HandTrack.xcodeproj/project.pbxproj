@@ -17,11 +17,13 @@
 		6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */; };
 		6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */; };
 		6DBF27628AD133EBA4F8B0F7 /* HandTrackiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */; };
+		8ACC513BFBBF6522D293EDA8 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 91F2A4B53502C34670516B15 /* libsqlite3.tbd */; };
 		9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */; };
 		9CDFC87C04384BBDD32E769C /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
 		A03646486FC032B05E9E1EAE /* HourlyReminderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */; };
 		ADD9FF72ABBEF6A02E464FAE /* iOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */; };
 		D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
+		E38114F530AD2EFD9D6C8DD6 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 91F2A4B53502C34670516B15 /* libsqlite3.tbd */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,11 +36,31 @@
 		4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackMacApp.swift; sourceTree = "<group>"; };
 		87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackStore.swift; sourceTree = "<group>"; };
 		881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeMonitor.swift; sourceTree = "<group>"; };
+		91F2A4B53502C34670516B15 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C63D8CC683C076EC281966D5 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2F99A39AAEFA967DAE65C60D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8ACC513BFBBF6522D293EDA8 /* libsqlite3.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0CADA4A7F9596BD40B931E8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E38114F530AD2EFD9D6C8DD6 /* libsqlite3.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0F5AAE1A42BEDA3FB5B1D407 /* Products */ = {
@@ -70,6 +92,7 @@
 				8CE084FB9040574B16829E45 /* Sources */,
 				96B156B02233DC89F27788A7 /* Sources */,
 				5EEC021E987F5A9B51965B31 /* Sources */,
+				CD1544B2DA8577A3906E27DF /* Frameworks */,
 				0F5AAE1A42BEDA3FB5B1D407 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -122,6 +145,14 @@
 			path = Packages/HandTrackPersistence/Sources;
 			sourceTree = "<group>";
 		};
+		CD1544B2DA8577A3906E27DF /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				91F2A4B53502C34670516B15 /* libsqlite3.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -130,6 +161,7 @@
 			buildConfigurationList = 5270D779CB823B995FBA2C2A /* Build configuration list for PBXNativeTarget "HandTrackMac" */;
 			buildPhases = (
 				B6F9E5DEA26EE046165CEBCC /* Sources */,
+				D0CADA4A7F9596BD40B931E8 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -147,6 +179,7 @@
 			buildConfigurationList = 58679B65D2570537D94702B7 /* Build configuration list for PBXNativeTarget "HandTrackiOS" */;
 			buildPhases = (
 				AD99FD52356453212ED906E3 /* Sources */,
+				2F99A39AAEFA967DAE65C60D /* Frameworks */,
 			);
 			buildRules = (
 			);
