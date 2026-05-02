@@ -8,11 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		088AA0DD144372F7277FEDC5 /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */; };
+		17A87C3F41D78D6C73C12589 /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
 		2E7CF99307E27669255CB687 /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
 		3D16E292575937C6D0EA8F83 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
 		44FE79965F3AFD52882D17BF /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */; };
+		56F69F1D52463F95F1BACEF2 /* RecorderContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD60CCA9D03E4F66387374C /* RecorderContentView.swift */; };
 		58DE2F1B66381255F78AC372 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63D8CC683C076EC281966D5 /* MacContentView.swift */; };
 		59158E26FF64D58755F83EDA /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
+		5BAFF44F8E6C15FF4607BAE3 /* HandTrackRecorderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 195BF10F602BE1AAE57116EF /* HandTrackRecorderApp.swift */; };
 		5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
 		6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */; };
 		6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */; };
@@ -20,24 +23,31 @@
 		9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */; };
 		9CDFC87C04384BBDD32E769C /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
 		A03646486FC032B05E9E1EAE /* HourlyReminderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */; };
+		A7F4EDC0FBA73BA66CE8F3F5 /* RecorderViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B7976927D39984C3637BEF /* RecorderViewModel.swift */; };
 		ADD9FF72ABBEF6A02E464FAE /* iOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */; };
+		D200C4D72A7F8199E81CD861 /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
 		D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
+		E719C7A864FD6AFD9B3275E5 /* KeystrokeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncClient.swift; sourceTree = "<group>"; };
+		195BF10F602BE1AAE57116EF /* HandTrackRecorderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackRecorderApp.swift; sourceTree = "<group>"; };
 		2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HourlyReminderManager.swift; sourceTree = "<group>"; };
 		345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardViewModel.swift; sourceTree = "<group>"; };
 		3FF81706D5FEE826182D099B /* HandTrackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackModels.swift; sourceTree = "<group>"; };
 		43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncServer.swift; sourceTree = "<group>"; };
 		4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackiOSApp.swift; sourceTree = "<group>"; };
 		4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackMacApp.swift; sourceTree = "<group>"; };
+		732ACA1C7DB816F1FE2A33B5 /* HandTrackRecorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackRecorder.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackStore.swift; sourceTree = "<group>"; };
 		881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeMonitor.swift; sourceTree = "<group>"; };
+		8FD60CCA9D03E4F66387374C /* RecorderContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderContentView.swift; sourceTree = "<group>"; };
 		BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C63D8CC683C076EC281966D5 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSContentView.swift; sourceTree = "<group>"; };
+		F5B7976927D39984C3637BEF /* RecorderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -46,6 +56,7 @@
 			children = (
 				CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */,
 				BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */,
+				732ACA1C7DB816F1FE2A33B5 /* HandTrackRecorder.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +81,7 @@
 				8CE084FB9040574B16829E45 /* Sources */,
 				96B156B02233DC89F27788A7 /* Sources */,
 				5EEC021E987F5A9B51965B31 /* Sources */,
+				4FBA89BCB489AD4D64A4343B /* Sources */,
 				0F5AAE1A42BEDA3FB5B1D407 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,7 +97,7 @@
 			path = Apps/iOS/Sources;
 			sourceTree = "<group>";
 		};
-		5EEC021E987F5A9B51965B31 /* Sources */ = {
+		4FBA89BCB489AD4D64A4343B /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */,
@@ -95,25 +107,7 @@
 			path = Packages/HandTrackSync/Sources;
 			sourceTree = "<group>";
 		};
-		8CE084FB9040574B16829E45 /* Sources */ = {
-			isa = PBXGroup;
-			children = (
-				881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */,
-			);
-			name = Sources;
-			path = Packages/HandTrackMacInput/Sources;
-			sourceTree = "<group>";
-		};
-		8D2A91569840B4EAC8543F90 /* Sources */ = {
-			isa = PBXGroup;
-			children = (
-				3FF81706D5FEE826182D099B /* HandTrackModels.swift */,
-			);
-			name = Sources;
-			path = Packages/HandTrackCore/Sources;
-			sourceTree = "<group>";
-		};
-		96B156B02233DC89F27788A7 /* Sources */ = {
+		5EEC021E987F5A9B51965B31 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */,
@@ -122,9 +116,55 @@
 			path = Packages/HandTrackPersistence/Sources;
 			sourceTree = "<group>";
 		};
+		8CE084FB9040574B16829E45 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				3FF81706D5FEE826182D099B /* HandTrackModels.swift */,
+			);
+			name = Sources;
+			path = Packages/HandTrackCore/Sources;
+			sourceTree = "<group>";
+		};
+		8D2A91569840B4EAC8543F90 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				195BF10F602BE1AAE57116EF /* HandTrackRecorderApp.swift */,
+				8FD60CCA9D03E4F66387374C /* RecorderContentView.swift */,
+				F5B7976927D39984C3637BEF /* RecorderViewModel.swift */,
+			);
+			name = Sources;
+			path = Apps/Recorder/Sources;
+			sourceTree = "<group>";
+		};
+		96B156B02233DC89F27788A7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */,
+			);
+			name = Sources;
+			path = Packages/HandTrackMacInput/Sources;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		113B1A1B40AA3DB1311E399F /* HandTrackRecorder */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 184BA039B3CCB8696FC804D6 /* Build configuration list for PBXNativeTarget "HandTrackRecorder" */;
+			buildPhases = (
+				1267E705A14A1EA646FE197A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HandTrackRecorder;
+			packageProductDependencies = (
+			);
+			productName = HandTrackRecorder;
+			productReference = 732ACA1C7DB816F1FE2A33B5 /* HandTrackRecorder.app */;
+			productType = "com.apple.product-type.application";
+		};
 		368A3C67550B7B2EB66294DB /* HandTrackMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 5270D779CB823B995FBA2C2A /* Build configuration list for PBXNativeTarget "HandTrackMac" */;
@@ -168,6 +208,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					113B1A1B40AA3DB1311E399F = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					368A3C67550B7B2EB66294DB = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -193,12 +237,26 @@
 			projectRoot = "";
 			targets = (
 				368A3C67550B7B2EB66294DB /* HandTrackMac */,
+				113B1A1B40AA3DB1311E399F /* HandTrackRecorder */,
 				559D53F46209885B9FAA6F42 /* HandTrackiOS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		1267E705A14A1EA646FE197A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				17A87C3F41D78D6C73C12589 /* HandTrackModels.swift in Sources */,
+				5BAFF44F8E6C15FF4607BAE3 /* HandTrackRecorderApp.swift in Sources */,
+				D200C4D72A7F8199E81CD861 /* HandTrackStore.swift in Sources */,
+				E719C7A864FD6AFD9B3275E5 /* KeystrokeMonitor.swift in Sources */,
+				56F69F1D52463F95F1BACEF2 /* RecorderContentView.swift in Sources */,
+				A7F4EDC0FBA73BA66CE8F3F5 /* RecorderViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AD99FD52356453212ED906E3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -231,6 +289,21 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		05505EE5741F6B70267BA430 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Apps/Recorder/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.david.handtrack.recorder;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 		41774A7A14F29760C5599904 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -327,6 +400,21 @@
 			};
 			name = Debug;
 		};
+		7DA8976D0042A18FB2AA8D38 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Apps/Recorder/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.david.handtrack.recorder;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 		D0CED5CD607B91990654B9AA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -419,6 +507,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		184BA039B3CCB8696FC804D6 /* Build configuration list for PBXNativeTarget "HandTrackRecorder" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				05505EE5741F6B70267BA430 /* Debug */,
+				7DA8976D0042A18FB2AA8D38 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		498E3B2DA24AA7D1867E35CF /* Build configuration list for PBXProject "HandTrack" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

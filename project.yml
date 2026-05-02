@@ -40,6 +40,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.mac
         INFOPLIST_FILE: Apps/macOS/Resources/Info.plist
+  HandTrackRecorder:
+    type: application
+    platform: macOS
+    sources:
+      - Apps/Recorder/Sources
+      - Packages/HandTrackCore/Sources
+      - Packages/HandTrackPersistence/Sources
+      - Packages/HandTrackMacInput/Sources
+    resources:
+      - Apps/Recorder/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.recorder
+        INFOPLIST_FILE: Apps/Recorder/Resources/Info.plist
 schemes:
   HandTrackiOS:
     build:
@@ -55,3 +69,10 @@ schemes:
     run:
       config: Debug
       executable: HandTrackMac
+  HandTrackRecorder:
+    build:
+      targets:
+        HandTrackRecorder: all
+    run:
+      config: Debug
+      executable: HandTrackRecorder
