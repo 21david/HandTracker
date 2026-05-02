@@ -33,7 +33,6 @@ targets:
       - Packages/HandTrackCore/Sources
       - Packages/HandTrackPersistence/Sources
       - Packages/HandTrackSync/Sources
-      - Packages/HandTrackMacInput/Sources
     resources:
       - Apps/macOS/Resources
     settings:

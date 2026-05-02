@@ -17,7 +17,6 @@
 		59158E26FF64D58755F83EDA /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
 		5BAFF44F8E6C15FF4607BAE3 /* HandTrackRecorderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 195BF10F602BE1AAE57116EF /* HandTrackRecorderApp.swift */; };
 		5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
-		6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */; };
 		6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */; };
 		6DBF27628AD133EBA4F8B0F7 /* HandTrackiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */; };
 		9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */; };
@@ -280,7 +279,6 @@
 				D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */,
 				5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */,
 				088AA0DD144372F7277FEDC5 /* HandTrackSyncServer.swift in Sources */,
-				6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */,
 				58DE2F1B66381255F78AC372 /* MacContentView.swift in Sources */,
 				6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */,
 			);

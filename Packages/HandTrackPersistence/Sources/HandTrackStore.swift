@@ -105,6 +105,10 @@ final class HandTrackStore: ObservableObject {
         #endif
     }
 
+    func reloadFromDisk() {
+        load()
+    }
+
     private func load() {
         do {
             try FileManager.default.createDirectory(

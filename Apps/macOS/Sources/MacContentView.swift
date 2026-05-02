@@ -19,6 +19,10 @@ struct MacContentView: View {
 
                 Spacer()
 
+                Button("Refresh Data") {
+                    store.reloadFromDisk()
+                }
+
                 Button("Open Data Folder") {
                     store.openStorageDirectory()
                 }
