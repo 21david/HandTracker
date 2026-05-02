@@ -21,8 +21,6 @@ targets:
       - Packages/HandTrackSync/Sources
     resources:
       - Apps/iOS/Resources
-    dependencies:
-      - sdk: libsqlite3.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.ios
@@ -38,8 +36,6 @@ targets:
       - Packages/HandTrackMacInput/Sources
     resources:
       - Apps/macOS/Resources
-    dependencies:
-      - sdk: libsqlite3.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.mac
