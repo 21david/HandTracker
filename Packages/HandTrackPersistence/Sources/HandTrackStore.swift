@@ -82,16 +82,24 @@ final class HandTrackStore: ObservableObject {
         hourlyLogs.filter { $0.syncStatus == .pending }
     }
 
+    // Records one key press.
+    // This is called from the Mac event-tap path, so changes here can affect capture reliability.
     func recordKeystroke(at timestamp: Date = Date()) {
+        // Keep an in-memory copy so dashboard stats update immediately.
         keystrokeEvents.append(KeystrokeEvent(timestamp: timestamp))
+
+        // Current MVP persistence rewrites the JSON file.
+        // This is simple but not the final long-term design for high-frequency key data.
         persistKeystrokes()
     }
 
+    // Counts keys from the start of the current hour using the in-memory event list.
     func keysSinceStartOfCurrentHour() -> Int {
         let hourStart = Date().startOfHour
         return keystrokeEvents.filter { $0.timestamp >= hourStart }.count
     }
 
+    // Estimates WPM using the common 5-keystrokes-per-word approximation.
     func averageWordsPerMinuteForCurrentHour() -> Double {
         let hourStart = Date().startOfHour
         let elapsedMinutes = max(Date().timeIntervalSince(hourStart) / 60, 1)
