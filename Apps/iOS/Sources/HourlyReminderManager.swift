@@ -10,7 +10,7 @@ enum HourlyReminderManager {
         center.removePendingNotificationRequests(withIdentifiers: ["hourly-hand-log"])
 
         let content = UNMutableNotificationContent()
-        content.title = "HandTrack check-in"
+        content.title = "Hand Helper check-in"
         content.body = "Log your pain level, hand-use minutes, and notes for this hour."
         content.sound = .default
 

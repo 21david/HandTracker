@@ -107,6 +107,30 @@ final class HandTrackStore: ObservableObject {
         return words / elapsedMinutes
     }
 
+    /// The last `count` five-minute slots ending at the slot that contains `reference`, ordered **oldest → newest** (chart: left → right; current slot on the right).
+    func keystrokesByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [KeystrokeFiveMinuteSlot] {
+        let calendar = Calendar.current
+        let currentSlotStart = reference.startOfFiveMinuteSlot
+
+        var slots: [KeystrokeFiveMinuteSlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let minutesBack = 5 * (count - 1 - i)
+            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
+            guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
+
+            let keyCount = keystrokeBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+                return sum + bucket.keyCount
+            }
+
+            slots.append(KeystrokeFiveMinuteSlot(slotStart: slotStart, keyCount: keyCount))
+        }
+
+        return slots
+    }
+
     func openStorageDirectory() {
         #if os(macOS)
         NSWorkspace.shared.open(storageDirectory)

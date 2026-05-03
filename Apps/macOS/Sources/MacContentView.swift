@@ -8,7 +8,7 @@ struct MacContentView: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text("HandTrack Mac")
+                    Text("Hand Helper")
                         .font(.largeTitle.bold())
                     Text(viewModel.syncStatus)
                         .foregroundStyle(.secondary)
@@ -28,6 +28,12 @@ struct MacContentView: View {
                 StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
                 StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
                 StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This hour")
+                    .font(.headline)
+                MacKeystrokeFiveMinuteChart()
             }
 
             Divider()

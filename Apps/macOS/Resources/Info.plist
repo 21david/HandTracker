@@ -11,7 +11,9 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>HandTrack Mac</string>
+	<string>Hand Helper</string>
+	<key>CFBundleDisplayName</key>
+	<string>Hand Helper</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -30,6 +32,6 @@
 		<string>_handtrack._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>HandTrack uses the local network to receive hourly logs from your iPhone.</string>
+	<string>Hand Helper uses the local network to receive hourly logs from your iPhone.</string>
 </dict>
 </plist>
