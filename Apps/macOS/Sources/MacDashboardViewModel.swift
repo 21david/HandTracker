@@ -1,35 +1,61 @@
-import Combine
 import Foundation
 
 @MainActor
 final class MacDashboardViewModel: ObservableObject {
-    private static let recordingAlarmsMutedKey = "HandTrack.recordingAlarmsMuted"
+
+    /// Seconds since Unix epoch — alarms stay silent until this instant (recording continues).
+    private static let recordingAlarmMuteExpiryKey = "HandTrack.recordingAlarmMuteExpiry"
 
     @Published private(set) var syncStatus = "Starting..."
-    /// When true, threshold dings never play but recording continues.
-    @Published private(set) var recordingAlarmsMuted: Bool
+
+    /// If non-nil and in the future, break-alarm sounds are suppressed.
+    @Published private(set) var recordingAlarmMuteExpiresAt: Date?
 
     private let monitor = KeystrokeMonitor()
     private var syncServer: HandTrackSyncServer?
 
     init() {
-        recordingAlarmsMuted = UserDefaults.standard.bool(forKey: Self.recordingAlarmsMutedKey)
+        recordingAlarmMuteExpiresAt = Self.loadMutedExpiryFromDefaults()
+        refreshExpiredMuteIfNeeded(now: Date())
     }
 
-    func setRecordingAlarmsMuted(_ muted: Bool) {
-        guard recordingAlarmsMuted != muted else { return }
-        recordingAlarmsMuted = muted
-        UserDefaults.standard.set(muted, forKey: Self.recordingAlarmsMutedKey)
+    /// Clears persisted mute once `now` has passed expiry; harmless to call often.
+    func refreshExpiredMuteIfNeeded(now: Date = Date()) {
+        guard let until = recordingAlarmMuteExpiresAt, until <= now else { return }
+        recordingAlarmMuteExpiresAt = nil
+        UserDefaults.standard.removeObject(forKey: Self.recordingAlarmMuteExpiryKey)
+    }
+
+    /// Extends the mute expiry to at least ``now`` plus the given duration (never shortens).
+    func muteBreakAlarms(minutes: Int) {
+        let duration = TimeInterval(minutes * 60)
+        let candidate = Date().addingTimeInterval(duration)
+        refreshExpiredMuteIfNeeded(now: Date())
+        if let existing = recordingAlarmMuteExpiresAt {
+            recordingAlarmMuteExpiresAt = candidate > existing ? candidate : existing
+        } else {
+            recordingAlarmMuteExpiresAt = candidate
+        }
+        if let until = recordingAlarmMuteExpiresAt {
+            UserDefaults.standard.set(until.timeIntervalSince1970, forKey: Self.recordingAlarmMuteExpiryKey)
+        }
+    }
+
+    func breakAlarmsMutedForPlaybackNow() -> Bool {
+        refreshExpiredMuteIfNeeded(now: Date())
+        guard let until = recordingAlarmMuteExpiresAt else { return false }
+        return until > Date()
     }
 
     func start(store: HandTrackStore) {
+        refreshExpiredMuteIfNeeded(now: Date())
         monitor.onKeystroke = { [weak self, weak store] in
             Task { @MainActor in
                 guard let self, let store else { return }
                 store.recordKeystroke()
                 MacRecordingAlarmFeedback.afterKeystrokeRecorded(
                     on: store,
-                    userMutedAlarms: self.recordingAlarmsMuted
+                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
                 )
             }
         }
@@ -39,7 +65,7 @@ final class MacDashboardViewModel: ObservableObject {
                 store.recordMouseClick()
                 MacRecordingAlarmFeedback.afterMouseClickRecorded(
                     on: store,
-                    userMutedAlarms: self.recordingAlarmsMuted
+                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
                 )
             }
         }
@@ -50,7 +76,7 @@ final class MacDashboardViewModel: ObservableObject {
                 MacRecordingAlarmFeedback.afterPointerTravelBatchRecorded(
                     on: store,
                     batchPixels: batch,
-                    userMutedAlarms: self.recordingAlarmsMuted
+                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
                 )
             }
         }
@@ -60,7 +86,8 @@ final class MacDashboardViewModel: ObservableObject {
         server.start()
         syncServer = server
 
-        syncStatus = "Recording keystrokes, mouse clicks, and pointer distance. Sync server runs on port 8787 while this app is open."
+        syncStatus =
+            "Sync server listens on port 8787 while this window is open. Open the HandTrack iPhone app and enter your Mac's Wi‑Fi hostname or LAN IP."
     }
 
     func stop() {
@@ -68,5 +95,16 @@ final class MacDashboardViewModel: ObservableObject {
         syncServer?.stop()
         syncServer = nil
         syncStatus = "Stopped"
+    }
+
+    private static func loadMutedExpiryFromDefaults() -> Date? {
+        let raw = UserDefaults.standard.double(forKey: recordingAlarmMuteExpiryKey)
+        guard raw > 0 else { return nil }
+        let date = Date(timeIntervalSince1970: raw)
+        guard date > Date() else {
+            UserDefaults.standard.removeObject(forKey: recordingAlarmMuteExpiryKey)
+            return nil
+        }
+        return date
     }
 }
