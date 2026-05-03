@@ -37,6 +37,8 @@ enum MacRecordingAlarmFeedback {
     private static func playConfiguredDing() {
         let name = NSSound.Name(HandTrackRecordingAlarmConfig.systemSoundName)
         if let sound = NSSound(named: name) {
+            let clamped = max(0, min(HandTrackRecordingAlarmConfig.dingPlaybackVolume, 1))
+            sound.volume = clamped
             sound.play()
         } else {
             NSSound.beep()

@@ -15,6 +15,9 @@ enum HandTrackRecordingAlarmConfig {
     /// `NSSound(named:)` base name (`/System/Library/Sounds`).
     static var systemSoundName: String = "Tink"
 
+    /// NSSound playback level `0 … 1` (relative to system output). Main volume still applies system-wide.
+    static var dingPlaybackVolume: Float = 0.35
+
     // MARK: - Keystrokes
 
     static var keystrokesAlarmEnabled: Bool = true
