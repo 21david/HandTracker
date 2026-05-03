@@ -55,7 +55,7 @@ struct iOSContentView: View {
                             await enableReminder()
                         }
                     }
-                    Text("iOS cannot auto-open the app from the lock screen. The reminder opens HandTrack when you tap it.")
+                    Text("iOS cannot auto-open the app from the lock screen. The reminder opens Hand Helper when you tap it.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -109,7 +109,7 @@ struct iOSContentView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("HandTrack")
+            .navigationTitle("Hand Helper")
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {

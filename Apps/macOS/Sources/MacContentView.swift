@@ -8,7 +8,7 @@ struct MacContentView: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text("HandTrack Mac")
+                    Text("Hand Helper")
                         .font(.largeTitle.bold())
                     Text(viewModel.syncStatus)
                         .foregroundStyle(.secondary)

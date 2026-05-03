@@ -20,7 +20,7 @@ final class HandTrackSyncServer: ObservableObject {
 
         do {
             let listener = try NWListener(using: .tcp, on: 8787)
-            listener.service = NWListener.Service(name: "HandTrack Mac", type: "_handtrack._tcp")
+            listener.service = NWListener.Service(name: "Hand Helper Mac", type: "_handtrack._tcp")
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in
                     self?.handle(connection)
