@@ -30,6 +30,16 @@ struct MacContentView: View {
                 StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This hour · 5-minute keystrokes")
+                    .font(.headline)
+                Text("Buckets align at :00, :05, …, :55. Each bar is the total keystrokes in that interval.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                MacKeystrokeFiveMinuteChart()
+            }
+
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {

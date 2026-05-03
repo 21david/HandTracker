@@ -43,6 +43,14 @@ struct KeystrokeMinuteBucket: Identifiable, Codable, Hashable {
     var id: Date { minuteStart }
 }
 
+/// Twelve consecutive five-minute spans within a calendar hour (e.g. 12:00–12:04, …, 12:55–12:59).
+struct KeystrokeFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var keyCount: Int
+
+    var id: Date { slotStart }
+}
+
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
