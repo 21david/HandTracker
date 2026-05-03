@@ -107,24 +107,25 @@ final class HandTrackStore: ObservableObject {
         return words / elapsedMinutes
     }
 
-    /// Sums keystrokes from minute buckets into 12 bins aligned to :00, :05, …, :55 relative to `reference`'s calendar hour.
-    func keystrokesByFiveMinuteSlotsInHour(containing reference: Date = Date()) -> [KeystrokeFiveMinuteSlot] {
+    /// The last `count` five-minute slots ending at the slot that contains `reference`, ordered **oldest → newest** (chart: left → right; current slot on the right).
+    func keystrokesByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [KeystrokeFiveMinuteSlot] {
         let calendar = Calendar.current
-        let hourStart = reference.startOfHour
-        guard let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart) else { return [] }
+        let currentSlotStart = reference.startOfFiveMinuteSlot
 
         var slots: [KeystrokeFiveMinuteSlot] = []
-        for slotIndex in 0..<12 {
-            guard let slotStart = calendar.date(byAdding: .minute, value: slotIndex * 5, to: hourStart),
-                  slotStart < hourEnd else { continue }
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let minutesBack = 5 * (count - 1 - i)
+            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
             guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
 
-            let count = keystrokeBuckets.reduce(0) { sum, bucket in
+            let keyCount = keystrokeBuckets.reduce(0) { sum, bucket in
                 guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
                 return sum + bucket.keyCount
             }
 
-            slots.append(KeystrokeFiveMinuteSlot(slotStart: slotStart, keyCount: count))
+            slots.append(KeystrokeFiveMinuteSlot(slotStart: slotStart, keyCount: keyCount))
         }
 
         return slots

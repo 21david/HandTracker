@@ -2,8 +2,10 @@ import Charts
 import SwiftUI
 
 private enum FiveMinuteKeystrokeChart {
-    /// Keystrokes per 5‑minute bucket that fills the vertical scale (~55/min if evenly spread across the slice). Recovery-oriented default alongside break schedules like 30 min typing / 10 min rest — change freely.
+    /// Keystrokes per bucket that fills the vertical scale (~55/min if evenly spread). Tune freely.
     static let comfortableKeystrokeCap: Double = 275
+    /// How many keystrokes above the cap it takes before the fill reads as strongly red (~20+ visibly warm per your note).
+    static let keystrokesAboveCapTowardFullRed: Double = 40
 }
 
 struct MacKeystrokeFiveMinuteChart: View {
@@ -11,25 +13,47 @@ struct MacKeystrokeFiveMinuteChart: View {
 
     private let cap = FiveMinuteKeystrokeChart.comfortableKeystrokeCap
 
+    /// Solid bar color at and below the cap.
+    private var baseBlue: Color { Color(red: 0.12, green: 0.52, blue: 1.0) }
+
+    /// Red target when heavily over cap.
+    private var stressRed: (Double, Double, Double) { (0.95, 0.08, 0.08) }
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { timeline in
-            let slots = store.keystrokesByFiveMinuteSlotsInHour(containing: timeline.date)
-            Chart(slots) { slot in
-                let displayedHeight = min(Double(slot.keyCount), cap)
-                BarMark(
-                    xStart: .value("From", slot.slotStart),
-                    xEnd: .value("To", slot.slotEnd),
-                    y: .value("Keys", displayedHeight)
-                )
-                .foregroundStyle(barColor(keystrokes: slot.keyCount))
-                .cornerRadius(2)
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            let slots = store.keystrokesByFiveMinuteSlotsTrailing(reference: timeline.date, count: 12)
+            let ordinals = Array(slots.indices)
+
+            Chart {
+                ForEach(ordinals, id: \.self) { index in
+                    let slot = slots[index]
+                    if slot.keyCount > 0 {
+                        let displayedHeight = min(Double(slot.keyCount), cap)
+                        BarMark(
+                            x: .value("Slice", index),
+                            y: .value("Keys", displayedHeight)
+                        )
+                        .foregroundStyle(barColor(keystrokes: slot.keyCount))
+                        .cornerRadius(3)
+                        .annotation(position: .top, alignment: .center, spacing: 4) {
+                            Text("\(slot.keyCount)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .chartYScale(domain: 0...cap)
+            .chartXScale(domain: -0.5...11.5)
             .chartXAxis {
-                AxisMarks(values: slots.map(\.slotStart)) {
+                AxisMarks(values: ordinals) { value in
                     AxisTick()
-                    AxisValueLabel(format: .dateTime.hour().minute(.twoDigits))
-                        .font(.caption2)
+                    if let idx = value.as(Int.self), slots.indices.contains(idx) {
+                        AxisValueLabel {
+                            Text(slots[idx].slotStart, format: .dateTime.hour().minute(.twoDigits))
+                                .font(.caption2)
+                        }
+                    }
                 }
             }
             .chartYAxis {
@@ -43,30 +67,22 @@ struct MacKeystrokeFiveMinuteChart: View {
         }
     }
 
-    /// Blue at low load, shifting toward orange and red as usage exceeds the comfortable cap.
+    /// At or below cap: steady blue; above cap, blend subtly toward red as excess grows.
     private func barColor(keystrokes: Int) -> Color {
-        let ratio = Double(keystrokes) / max(cap, 1)
-        // Full deep red around ~2.5× the comfortable cap; below 1.0 stays mostly cool tones.
-        let blend = min(ratio / 2.5, 1.0)
-        let blue = (Double(0.12), Double(0.52), Double(1.0))
-        let amber = (Double(1.0), Double(0.55), Double(0.06))
-        let red = (Double(0.95), Double(0.06), Double(0.06))
-        let mid = blend < 0.55
-            ? interpolate(blue, amber, blend / 0.55)
-            : interpolate(amber, red, (blend - 0.55) / 0.45)
-        return Color(red: mid.0, green: mid.1, blue: mid.2)
-    }
-
-    private func interpolate(
-        _ a: (Double, Double, Double),
-        _ b: (Double, Double, Double),
-        _ t: Double
-    ) -> (Double, Double, Double) {
-        let clamped = min(max(t, 0), 1)
-        return (
-            a.0 + (b.0 - a.0) * clamped,
-            a.1 + (b.1 - a.1) * clamped,
-            a.2 + (b.2 - a.2) * clamped
+        if Double(keystrokes) <= cap {
+            return baseBlue.opacity(0.92)
+        }
+        let excess = Double(keystrokes) - cap
+        let tint = min(
+            excess / FiveMinuteKeystrokeChart.keystrokesAboveCapTowardFullRed,
+            1.0
+        )
+        let b: (Double, Double, Double) = (0.12, 0.52, 1.0)
+        let r = stressRed
+        return Color(
+            red: b.0 + (r.0 - b.0) * tint,
+            green: b.1 + (r.1 - b.1) * tint,
+            blue: b.2 + (r.2 - b.2) * tint
         )
     }
 }
