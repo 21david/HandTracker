@@ -40,9 +40,11 @@ struct MacContentView: View {
                     } else {
                         List(store.hourlyLogs.prefix(8)) { log in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(log.hourStart.displayHour)
+                                Text("\(log.createdAt.displayTime) · \(log.hourStart.displayHourBucket)")
                                     .font(.headline)
-                                Text("Pain \(log.painLevel), \(log.minutesHandsUsed) min hand use")
+                                Text(
+                                    "L \(log.painLevelLeft.handTrackPainCompactLabel), R \(log.painLevelRight.handTrackPainCompactLabel); \(log.minutesHandsUsed) min"
+                                )
                                     .foregroundStyle(.secondary)
                                 if !log.journalEntry.isEmpty {
                                     Text(log.journalEntry)

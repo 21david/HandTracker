@@ -31,11 +31,17 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    func saveHourlyLog(painLevel: Int, minutesHandsUsed: Int, journalEntry: String) {
+    func saveHourlyLog(
+        painLevelLeft: Double,
+        painLevelRight: Double,
+        minutesHandsUsed: Int,
+        journalEntry: String
+    ) {
         let now = Date()
         let log = HourlyHandLog(
             hourStart: now.startOfHour,
-            painLevel: painLevel,
+            painLevelLeft: painLevelLeft,
+            painLevelRight: painLevelRight,
             minutesHandsUsed: minutesHandsUsed,
             journalEntry: journalEntry,
             createdAt: now,
@@ -64,7 +70,10 @@ final class HandTrackStore: ObservableObject {
             acceptedIDs.append(incoming.id)
         }
 
-        hourlyLogs.sort { $0.hourStart > $1.hourStart }
+        hourlyLogs.sort {
+            if $0.hourStart != $1.hourStart { return $0.hourStart > $1.hourStart }
+            return $0.createdAt > $1.createdAt
+        }
         logsToSave.forEach(save)
         return acceptedIDs
     }
@@ -300,7 +309,9 @@ final class HandTrackStore: ObservableObject {
         CREATE TABLE IF NOT EXISTS hourly_logs (
             id TEXT PRIMARY KEY,
             hour_start REAL NOT NULL,
-            pain_level INTEGER NOT NULL,
+            pain_level REAL NOT NULL,
+            pain_level_left REAL NOT NULL,
+            pain_level_right REAL NOT NULL,
             minutes_hands_used INTEGER NOT NULL,
             journal_entry TEXT NOT NULL,
             created_at REAL NOT NULL,
@@ -331,6 +342,92 @@ final class HandTrackStore: ObservableObject {
         """)
 
         try execute("CREATE INDEX IF NOT EXISTS idx_hourly_logs_hour_start ON hourly_logs(hour_start);")
+
+        try migrateHourlyLogsPainSidesIfNeeded()
+        try migrateHourlyPainLevelsToHalfStepStorageIfNeeded()
+    }
+
+    private func hourlyLogColumnNames() throws -> Set<String> {
+        try query("PRAGMA table_info(hourly_logs)") { statement in
+            columnText(statement, at: 1)
+        }
+        .reduce(into: Set<String>()) { $0.insert($1) }
+    }
+
+    private func migrateHourlyLogsPainSidesIfNeeded() throws {
+        var columns = try hourlyLogColumnNames()
+        if columns.isEmpty { return }
+
+        var addedSides = false
+        if !columns.contains("pain_level_left") {
+            try execute("""
+                ALTER TABLE hourly_logs ADD COLUMN pain_level_left INTEGER NOT NULL DEFAULT 1;
+            """)
+            columns.insert("pain_level_left")
+            addedSides = true
+        }
+        if !columns.contains("pain_level_right") {
+            try execute("""
+                ALTER TABLE hourly_logs ADD COLUMN pain_level_right INTEGER NOT NULL DEFAULT 1;
+            """)
+            addedSides = true
+        }
+        if addedSides {
+            try execute("""
+                UPDATE hourly_logs SET pain_level_left = pain_level, pain_level_right = pain_level;
+            """)
+        }
+    }
+
+    /// INTEGER affinity rounding can truncate half steps (`2.5` → `2`). Recreate rows with REAL pain columns once.
+    private func migrateHourlyPainLevelsToHalfStepStorageIfNeeded() throws {
+        guard !(try hourlyLogColumnNames()).isEmpty else { return }
+        guard try hourlyPainColumnsDeclareExplicitIntegerAffinity() else { return }
+
+        try execute("""
+        BEGIN IMMEDIATE;
+        CREATE TABLE hourly_logs_half_step_migr (
+            id TEXT PRIMARY KEY,
+            hour_start REAL NOT NULL,
+            pain_level REAL NOT NULL,
+            pain_level_left REAL NOT NULL,
+            pain_level_right REAL NOT NULL,
+            minutes_hands_used INTEGER NOT NULL,
+            journal_entry TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            sync_status TEXT NOT NULL
+        );
+        INSERT INTO hourly_logs_half_step_migr (
+            id, hour_start, pain_level, pain_level_left, pain_level_right,
+            minutes_hands_used, journal_entry, created_at, updated_at, sync_status
+        )
+        SELECT id, hour_start,
+            CAST(pain_level AS REAL),
+            CAST(pain_level_left AS REAL),
+            CAST(pain_level_right AS REAL),
+            minutes_hands_used, journal_entry, created_at, updated_at, sync_status
+        FROM hourly_logs;
+        DROP TABLE hourly_logs;
+        ALTER TABLE hourly_logs_half_step_migr RENAME TO hourly_logs;
+        CREATE INDEX IF NOT EXISTS idx_hourly_logs_hour_start ON hourly_logs(hour_start);
+        COMMIT;
+        """)
+    }
+
+    private func hourlyPainColumnsDeclareExplicitIntegerAffinity() throws -> Bool {
+        let rows: [(String, String)] = try query("PRAGMA table_info(hourly_logs)") { statement in
+            (columnText(statement, at: 1).lowercased(), columnText(statement, at: 2).lowercased())
+        }
+        let painNames = Set(["pain_level", "pain_level_left", "pain_level_right"])
+        for (name, typeDecl) in rows {
+            guard painNames.contains(name) else { continue }
+            let trimmed = typeDecl.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.contains("int") {
+                return true
+            }
+        }
+        return false
     }
 
     private func save(_ log: HourlyHandLog) {
@@ -371,21 +468,25 @@ final class HandTrackStore: ObservableObject {
             id,
             hour_start,
             pain_level,
+            pain_level_left,
+            pain_level_right,
             minutes_hands_used,
             journal_entry,
             created_at,
             updated_at,
             sync_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """) { statement in
             bindText(log.id.uuidString, to: statement, at: 1)
             sqlite3_bind_double(statement, 2, log.hourStart.timeIntervalSince1970)
-            sqlite3_bind_int(statement, 3, Int32(log.painLevel))
-            sqlite3_bind_int(statement, 4, Int32(log.minutesHandsUsed))
-            bindText(log.journalEntry, to: statement, at: 5)
-            sqlite3_bind_double(statement, 6, log.createdAt.timeIntervalSince1970)
-            sqlite3_bind_double(statement, 7, log.updatedAt.timeIntervalSince1970)
-            bindText(log.syncStatus.rawValue, to: statement, at: 8)
+            sqlite3_bind_double(statement, 3, log.painLevelLeft)
+            sqlite3_bind_double(statement, 4, log.painLevelLeft)
+            sqlite3_bind_double(statement, 5, log.painLevelRight)
+            sqlite3_bind_int(statement, 6, Int32(log.minutesHandsUsed))
+            bindText(log.journalEntry, to: statement, at: 7)
+            sqlite3_bind_double(statement, 8, log.createdAt.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 9, log.updatedAt.timeIntervalSince1970)
+            bindText(log.syncStatus.rawValue, to: statement, at: 10)
 
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.sqlite(message: lastSQLiteError)
@@ -437,9 +538,10 @@ final class HandTrackStore: ObservableObject {
 
     private func loadHourlyLogs() throws -> [HourlyHandLog] {
         try query("""
-        SELECT id, hour_start, pain_level, minutes_hands_used, journal_entry, created_at, updated_at, sync_status
+        SELECT id, hour_start, pain_level_left, pain_level_right,
+               minutes_hands_used, journal_entry, created_at, updated_at, sync_status
         FROM hourly_logs
-        ORDER BY hour_start DESC;
+        ORDER BY hour_start DESC, created_at DESC;
         """) { statement in
             guard let id = UUID(uuidString: columnText(statement, at: 0)) else {
                 throw StoreError.invalidData("Invalid hourly log UUID")
@@ -448,12 +550,13 @@ final class HandTrackStore: ObservableObject {
             return HourlyHandLog(
                 id: id,
                 hourStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
-                painLevel: Int(sqlite3_column_int(statement, 2)),
-                minutesHandsUsed: Int(sqlite3_column_int(statement, 3)),
-                journalEntry: columnText(statement, at: 4),
-                createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
-                updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
-                syncStatus: SyncStatus(rawValue: columnText(statement, at: 7)) ?? .pending
+                painLevelLeft: sqlite3_column_double(statement, 2),
+                painLevelRight: sqlite3_column_double(statement, 3),
+                minutesHandsUsed: Int(sqlite3_column_int(statement, 4)),
+                journalEntry: columnText(statement, at: 5),
+                createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
+                updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
+                syncStatus: SyncStatus(rawValue: columnText(statement, at: 8)) ?? .pending
             )
         }
     }
