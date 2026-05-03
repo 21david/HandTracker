@@ -46,7 +46,7 @@ struct MacKeystrokeFiveMinuteChart: View {
             .chartYScale(domain: 0...cap)
             .chartXScale(domain: -0.5...11.5)
             .chartXAxis {
-                AxisMarks(values: ordinals) { value in
+                AxisMarks(preset: .aligned, values: ordinals) { value in
                     AxisTick()
                     if let idx = value.as(Int.self), slots.indices.contains(idx) {
                         AxisValueLabel {
