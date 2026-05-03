@@ -55,6 +55,25 @@ struct KeystrokeFiveMinuteSlot: Identifiable, Hashable {
     }
 }
 
+/// Mouse click counts summed into the same clock-aligned five-minute windows as keystrokes.
+struct MouseClickFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var clickCount: Int
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+    }
+}
+
+struct MouseClickMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var clickCount: Int
+
+    var id: Date { minuteStart }
+}
+
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
