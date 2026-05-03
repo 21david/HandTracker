@@ -16,12 +16,6 @@ struct MacKeystrokeFiveMinuteChart: View {
 
     private let cap = FiveMinuteKeystrokeChart.comfortableKeystrokeCap
 
-    /// Solid bar color at and below the cap.
-    private var baseBlue: Color { Color(red: 0.12, green: 0.52, blue: 1.0) }
-
-    /// Red target when heavily over cap.
-    private var stressRed: (Double, Double, Double) { (0.95, 0.08, 0.08) }
-
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
             chartContent(referenceDate: timeline.date)
@@ -47,6 +41,7 @@ struct MacKeystrokeFiveMinuteChart: View {
         }
         .chartYAxisLabel("Keystrokes", position: .leading)
         .frame(height: 200)
+        .padding(.top, 20)
     }
 
     /// Solid horizontal baseline at y=0, matching the x-axis tick color.
@@ -83,9 +78,17 @@ struct MacKeystrokeFiveMinuteChart: View {
             yStart: yStartValue,
             yEnd: yEndValue
         )
-        .foregroundStyle(barColor(keystrokes: plotted.count))
+        .foregroundStyle(
+            MacFiveMinuteBarStyle.barGradient(
+                stressAmount: MacFiveMinuteBarStyle.stressAmount(
+                    from: Double(plotted.count),
+                    cap: cap,
+                    excessWidth: FiveMinuteKeystrokeChart.keystrokesAboveCapTowardFullRed
+                )
+            )
+        )
         .cornerRadius(4, style: .continuous)
-        .annotation(position: .top, alignment: .center, spacing: 4) {
+        .annotation(position: .top, alignment: .center, spacing: 10) {
             Text("\(plotted.count)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -132,23 +135,4 @@ struct MacKeystrokeFiveMinuteChart: View {
         formatter.pmSymbol = "pm"
         return formatter
     }()
-
-    /// At or below cap: steady blue; above cap, blend subtly toward red as excess grows.
-    private func barColor(keystrokes: Int) -> Color {
-        if Double(keystrokes) <= cap {
-            return baseBlue.opacity(0.92)
-        }
-        let excess = Double(keystrokes) - cap
-        let tint = min(
-            excess / FiveMinuteKeystrokeChart.keystrokesAboveCapTowardFullRed,
-            1.0
-        )
-        let b: (Double, Double, Double) = (0.12, 0.52, 1.0)
-        let r = stressRed
-        return Color(
-            red: b.0 + (r.0 - b.0) * tint,
-            green: b.1 + (r.1 - b.1) * tint,
-            blue: b.2 + (r.2 - b.2) * tint
-        )
-    }
 }

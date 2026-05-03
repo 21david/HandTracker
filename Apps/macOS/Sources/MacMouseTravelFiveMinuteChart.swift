@@ -14,9 +14,6 @@ struct MacMouseTravelFiveMinuteChart: View {
 
     private let cap = FiveMinuteMouseTravelChart.comfortableTravelCapPixels
 
-    private var basePurple: Color { Color(red: 0.58, green: 0.35, blue: 0.96) }
-    private var stressWarm: (Double, Double, Double) { (0.98, 0.72, 0.15) }
-
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
             chartContent(referenceDate: timeline.date)
@@ -42,6 +39,7 @@ struct MacMouseTravelFiveMinuteChart: View {
         }
         .chartYAxisLabel("Pixels", position: .leading)
         .frame(height: 200)
+        .padding(.top, 20)
     }
 
     @ChartContentBuilder
@@ -74,9 +72,17 @@ struct MacMouseTravelFiveMinuteChart: View {
             yStart: PlottableValue.value("Bottom", 0.0),
             yEnd: PlottableValue.value("Top", displayed)
         )
-        .foregroundStyle(barColor(pixels: plotted.pixels))
+        .foregroundStyle(
+            MacFiveMinuteBarStyle.barGradient(
+                stressAmount: MacFiveMinuteBarStyle.stressAmount(
+                    from: plotted.pixels,
+                    cap: cap,
+                    excessWidth: FiveMinuteMouseTravelChart.pixelsAboveCapTowardFullWarm
+                )
+            )
+        )
         .cornerRadius(4, style: .continuous)
-        .annotation(position: .top, alignment: .center, spacing: 4) {
+        .annotation(position: .top, alignment: .center, spacing: 10) {
             Text(Self.compactPixelLabel(plotted.pixels))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -134,23 +140,5 @@ struct MacMouseTravelFiveMinuteChart: View {
             return String(format: "%.1fk px", pixels / 1_000)
         }
         return String(format: "%.0f px", pixels)
-    }
-
-    private func barColor(pixels: Double) -> Color {
-        if pixels <= cap {
-            return basePurple.opacity(0.92)
-        }
-        let excess = pixels - cap
-        let tint = min(
-            excess / FiveMinuteMouseTravelChart.pixelsAboveCapTowardFullWarm,
-            1.0
-        )
-        let p: (Double, Double, Double) = (0.58, 0.35, 0.96)
-        let w = stressWarm
-        return Color(
-            red: p.0 + (w.0 - p.0) * tint,
-            green: p.1 + (w.1 - p.1) * tint,
-            blue: p.2 + (w.2 - p.2) * tint
-        )
     }
 }
