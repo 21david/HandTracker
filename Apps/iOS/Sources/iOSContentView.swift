@@ -154,6 +154,18 @@ struct iOSContentView: View {
     private func eveningStopChip(_ choice: HourlyReminderManager.QuietStopChoice) -> some View {
         let selected = quietStopRaw == choice.rawValue
 
+        Group {
+            if selected {
+                eveningStopChipButton(choice)
+                    .buttonStyle(BorderedProminentButtonStyle())
+            } else {
+                eveningStopChipButton(choice)
+                    .buttonStyle(BorderedButtonStyle())
+            }
+        }
+    }
+
+    private func eveningStopChipButton(_ choice: HourlyReminderManager.QuietStopChoice) -> some View {
         Button {
             quietStopRaw = choice.rawValue
         } label: {
@@ -163,7 +175,6 @@ struct iOSContentView: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(selected ? .borderedProminent : .bordered)
     }
 
     private func saveLog() {
