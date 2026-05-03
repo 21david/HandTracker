@@ -31,12 +31,8 @@ struct MacContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("This hour · 5-minute keystrokes")
+                Text("This hour")
                     .font(.headline)
-                Text("Buckets align at :00, :05, …, :55. Each bar is the total keystrokes in that interval.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 MacKeystrokeFiveMinuteChart()
             }
 

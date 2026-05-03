@@ -49,6 +49,10 @@ struct KeystrokeFiveMinuteSlot: Identifiable, Hashable {
     var keyCount: Int
 
     var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+    }
 }
 
 struct SyncResponse: Codable {
