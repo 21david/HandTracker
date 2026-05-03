@@ -6,6 +6,9 @@ private enum FiveMinuteKeystrokeChart {
     static let comfortableKeystrokeCap: Double = 275
     /// How many keystrokes above the cap it takes before the fill reads as strongly red (~20+ visibly warm per your note).
     static let keystrokesAboveCapTowardFullRed: Double = 40
+    /// Solid (non-transparent) gray used by both the x-axis baseline and tick marks so their
+    /// intersection composites to the same shade rather than appearing brighter.
+    static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
 struct MacKeystrokeFiveMinuteChart: View {
@@ -21,51 +24,114 @@ struct MacKeystrokeFiveMinuteChart: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            let slots = store.keystrokesByFiveMinuteSlotsTrailing(reference: timeline.date, count: 12)
-            let ordinals = Array(slots.indices)
+            chartContent(referenceDate: timeline.date)
+        }
+    }
 
-            Chart {
-                ForEach(ordinals, id: \.self) { index in
-                    let slot = slots[index]
-                    if slot.keyCount > 0 {
-                        let displayedHeight = min(Double(slot.keyCount), cap)
-                        BarMark(
-                            x: .value("Slice", index),
-                            y: .value("Keys", displayedHeight)
-                        )
-                        .foregroundStyle(barColor(keystrokes: slot.keyCount))
-                        .cornerRadius(3)
-                        .annotation(position: .top, alignment: .center, spacing: 4) {
-                            Text("\(slot.keyCount)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+    @ViewBuilder
+    private func chartContent(referenceDate: Date) -> some View {
+        let slots = store.keystrokesByFiveMinuteSlotsTrailing(reference: referenceDate, count: 12)
+        let boundaries = Array(0...slots.count)
+
+        Chart {
+            baselineMark()
+            keystrokeMarks(slots: slots)
+        }
+        .chartYScale(domain: 0...cap)
+        .chartXScale(domain: 0...Double(slots.count))
+        .chartXAxis {
+            xAxisMarks(boundaries: boundaries, slots: slots)
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading)
+        }
+        .chartYAxisLabel("Keystrokes", position: .leading)
+        .frame(height: 200)
+    }
+
+    /// Solid horizontal baseline at y=0, matching the x-axis tick color.
+    @ChartContentBuilder
+    private func baselineMark() -> some ChartContent {
+        RuleMark(y: .value("Baseline", 0.0))
+            .foregroundStyle(FiveMinuteKeystrokeChart.axisLineColor)
+            .lineStyle(StrokeStyle(lineWidth: 1))
+    }
+
+    @ChartContentBuilder
+    private func keystrokeMarks(slots: [KeystrokeFiveMinuteSlot]) -> some ChartContent {
+        let visibleSlots = slots.enumerated().compactMap { index, slot -> PlottedKeystroke? in
+            guard slot.keyCount > 0 else { return nil }
+            return PlottedKeystroke(index: index, count: slot.keyCount)
+        }
+
+        ForEach(visibleSlots) { plotted in
+            keystrokeBar(for: plotted)
+        }
+    }
+
+    @ChartContentBuilder
+    private func keystrokeBar(for plotted: PlottedKeystroke) -> some ChartContent {
+        let gap: Double = 0.04
+        let xStartValue = PlottableValue.value("Start", Double(plotted.index) + gap)
+        let xEndValue = PlottableValue.value("End", Double(plotted.index + 1) - gap)
+        let yStartValue = PlottableValue.value("Bottom", 0.0)
+        let yEndValue = PlottableValue.value("Top", min(Double(plotted.count), cap))
+
+        RectangleMark(
+            xStart: xStartValue,
+            xEnd: xEndValue,
+            yStart: yStartValue,
+            yEnd: yEndValue
+        )
+        .foregroundStyle(barColor(keystrokes: plotted.count))
+        .cornerRadius(4, style: .continuous)
+        .annotation(position: .top, alignment: .center, spacing: 4) {
+            Text("\(plotted.count)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private struct PlottedKeystroke: Identifiable {
+        let index: Int
+        let count: Int
+        var id: Int { index }
+    }
+
+    @AxisContentBuilder
+    private func xAxisMarks(boundaries: [Int], slots: [KeystrokeFiveMinuteSlot]) -> some AxisContent {
+        AxisMarks(preset: .aligned, values: boundaries) { value in
+            AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
+                .foregroundStyle(FiveMinuteKeystrokeChart.axisLineColor)
+            if let idx = value.as(Int.self), let date = Self.tickDate(idx: idx, slots: slots) {
+                AxisValueLabel(centered: false) {
+                    Text(Self.axisLabelFormatter.string(from: date))
+                        .font(.caption2)
+                        .foregroundStyle(.primary)
                 }
-            }
-            .chartYScale(domain: 0...cap)
-            .chartXScale(domain: -0.5...11.5)
-            .chartXAxis {
-                AxisMarks(preset: .aligned, values: ordinals) { value in
-                    AxisTick()
-                    if let idx = value.as(Int.self), slots.indices.contains(idx) {
-                        AxisValueLabel {
-                            Text(slots[idx].slotStart, format: .dateTime.hour().minute(.twoDigits))
-                                .font(.caption2)
-                        }
-                    }
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-            .chartYAxisLabel("Keystrokes", position: .leading)
-            .frame(height: 200)
-            .chartPlotStyle { plotArea in
-                plotArea.padding(.leading, 4)
             }
         }
     }
+
+    /// Returns the date to display under tick `idx`. The first 12 ticks show each slot's start time;
+    /// the trailing tick (idx == slots.count) shows the end time of the last slot.
+    private static func tickDate(idx: Int, slots: [KeystrokeFiveMinuteSlot]) -> Date? {
+        if idx >= 0 && idx < slots.count {
+            return slots[idx].slotStart
+        }
+        if idx == slots.count, let last = slots.last {
+            return last.slotEnd
+        }
+        return nil
+    }
+
+    private static let axisLabelFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mma"
+        formatter.amSymbol = "am"
+        formatter.pmSymbol = "pm"
+        return formatter
+    }()
 
     /// At or below cap: steady blue; above cap, blend subtly toward red as excess grows.
     private func barColor(keystrokes: Int) -> Color {
