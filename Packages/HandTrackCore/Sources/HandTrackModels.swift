@@ -74,6 +74,26 @@ struct MouseClickMinuteBucket: Identifiable, Codable, Hashable {
     var id: Date { minuteStart }
 }
 
+/// Accumulated on-screen pointer movement in **pixels** (AppKit points / backing-independent units)
+/// per calendar minute, summed from CGEvent mouse deltas.
+struct MouseTravelMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var travelPixels: Double
+
+    var id: Date { minuteStart }
+}
+
+struct MouseTravelFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var travelPixels: Double
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+    }
+}
+
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
