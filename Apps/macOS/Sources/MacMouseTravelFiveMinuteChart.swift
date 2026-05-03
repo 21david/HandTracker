@@ -40,7 +40,7 @@ struct MacMouseTravelFiveMinuteChart: View {
         .chartYAxis {
             AxisMarks(position: .leading)
         }
-        .chartYAxisLabel("Pixels (5 min)", position: .leading)
+        .chartYAxisLabel("Pixels", position: .leading)
         .frame(height: 200)
     }
 

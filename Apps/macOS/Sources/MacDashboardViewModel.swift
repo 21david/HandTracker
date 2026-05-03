@@ -11,17 +11,23 @@ final class MacDashboardViewModel: ObservableObject {
     func start(store: HandTrackStore) {
         monitor.onKeystroke = { [weak store] in
             Task { @MainActor in
-                store?.recordKeystroke()
+                guard let store else { return }
+                store.recordKeystroke()
+                MacRecordingAlarmFeedback.afterKeystrokeRecorded(on: store)
             }
         }
         monitor.onMouseClick = { [weak store] in
             Task { @MainActor in
-                store?.recordMouseClick()
+                guard let store else { return }
+                store.recordMouseClick()
+                MacRecordingAlarmFeedback.afterMouseClickRecorded(on: store)
             }
         }
         monitor.onBufferedTravelPixels = { [weak store] batch in
             Task { @MainActor in
-                store?.recordMouseTravelPixels(batch)
+                guard let store else { return }
+                store.recordMouseTravelPixels(batch)
+                MacRecordingAlarmFeedback.afterPointerTravelBatchRecorded(on: store, batchPixels: batch)
             }
         }
         monitor.start()
