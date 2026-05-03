@@ -3,6 +3,8 @@ import SwiftUI
 struct iOSContentView: View {
     @EnvironmentObject private var store: HandTrackStore
     @AppStorage("macSyncHost") private var macSyncHost = ""
+    @AppStorage("hourlyReminderQuietStop") private var quietStopRaw: Int =
+        HourlyReminderManager.QuietStopChoice.elevenPM.rawValue
     @FocusState private var focusedField: Field?
 
     @State private var painLevel = 0
@@ -50,14 +52,40 @@ struct iOSContentView: View {
                 }
 
                 Section("Hourly Reminder") {
+                    Text(
+                        "Alerts begin at the start of the next hour—for example, enabling at 1:49 p.m. waits until 2:00 p.m., then repeats every clock hour."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Stop for the night")
+                            .font(.subheadline.weight(.semibold))
+                        Text("No hourly alerts from that time until \(HourlyReminderManager.morningResumeHour):00.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                            ForEach(HourlyReminderManager.QuietStopChoice.allCases) { choice in
+                                eveningStopChip(choice)
+                            }
+                        }
+                    }
+
+                    Text(
+                        """
+                        Twelve a.m.: late evening pings can still arrive; midnight through morning silence. One a.m.: \
+                        silent starting at 1:00 until \(HourlyReminderManager.morningResumeHour):00 (a midnight ding is still OK). Tap Enable again whenever you tweak these picks.
+                        """
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                     Button("Enable Hourly Reminder") {
                         Task {
                             await enableReminder()
                         }
                     }
-                    Text("iOS cannot auto-open the app from the lock screen. The reminder opens Hand Helper when you tap it.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
 
                 Section("Sync To Mac") {
@@ -122,6 +150,22 @@ struct iOSContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func eveningStopChip(_ choice: HourlyReminderManager.QuietStopChoice) -> some View {
+        let selected = quietStopRaw == choice.rawValue
+
+        Button {
+            quietStopRaw = choice.rawValue
+        } label: {
+            Text(choice.pickerTitle)
+                .font(.footnote.weight(.medium))
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(selected ? .borderedProminent : .bordered)
+    }
+
     private func saveLog() {
         store.saveHourlyLog(
             painLevel: painLevel,
@@ -136,8 +180,13 @@ struct iOSContentView: View {
 
     private func enableReminder() async {
         do {
-            try await HourlyReminderManager.requestPermissionAndSchedule()
-            statusMessage = "Hourly reminder scheduled"
+            let choice = HourlyReminderManager.QuietStopChoice(rawValue: quietStopRaw)
+                ?? HourlyReminderManager.QuietStopChoice.elevenPM
+            try await HourlyReminderManager.requestPermissionAndSchedule(
+                quietChoice: choice,
+                wakeHour: HourlyReminderManager.morningResumeHour
+            )
+            statusMessage = "Hourly reminder scheduled (respects your night stop)."
         } catch {
             statusMessage = "Reminder failed: \(error.localizedDescription)"
         }
