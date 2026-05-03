@@ -146,26 +146,39 @@ struct MacContentView: View {
                     .lineLimit(1)
             }
 
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
                 Text("Mute")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     ForEach(MuteInterval.allCases) { interval in
                         Button {
                             viewModel.muteBreakAlarms(minutes: interval.rawValue)
                         } label: {
                             Text(interval.shortLabel)
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                .frame(width: 40, height: 40)
-                                .contentShape(Circle())
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .tracking(0.25)
+                                .minimumScaleFactor(0.8)
+                                .lineLimit(1)
                         }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.circle)
-                        .controlSize(.regular)
+                        .buttonStyle(MuteDurationPillStyle())
                         .help(interval.help)
                     }
+
+                    Button {
+                        viewModel.clearBreakAlarmMute()
+                    } label: {
+                        Text("Unmute")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .tracking(0.2)
+                            .minimumScaleFactor(0.85)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(UnmutePillButtonStyle())
+                    .disabled(!activeMute)
+                    .opacity(activeMute ? 1 : 0.42)
+                    .help(activeMute ? "Resume break alarms immediately." : "Timers are not muted.")
                 }
             }
         }
@@ -220,6 +233,118 @@ struct MacContentView: View {
             return String(format: "%.1fk px", pixels / 1_000)
         }
         return String(format: "%.0f px", pixels)
+    }
+}
+
+// MARK: - Mute controls (pill + soft 3D)
+
+private struct MuteDurationPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.white.opacity(configuration.isPressed ? 0.88 : 0.98))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                ZStack {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.38, green: 0.58, blue: 0.98),
+                                    Color(red: 0.16, green: 0.35, blue: 0.78),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.38), Color.clear],
+                                startPoint: .top,
+                                endPoint: UnitPoint(x: 0.5, y: 0.55)
+                            )
+                        )
+                        .padding(1)
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.55),
+                                    Color.black.opacity(0.22),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: .black.opacity(0.28), radius: configuration.isPressed ? 1 : 3, x: 0, y: configuration.isPressed ? 0 : 2)
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct UnmutePillButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(
+                Color.white.opacity(isEnabled ? (configuration.isPressed ? 0.88 : 0.98) : 0.55)
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                ZStack {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: isEnabled
+                                    ? [
+                                        Color(red: 0.22, green: 0.72, blue: 0.48),
+                                        Color(red: 0.08, green: 0.48, blue: 0.32),
+                                    ]
+                                    : [
+                                        Color(red: 0.28, green: 0.32, blue: 0.36),
+                                        Color(red: 0.16, green: 0.18, blue: 0.22),
+                                    ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(isEnabled ? 0.32 : 0.12), Color.clear],
+                                startPoint: .top,
+                                endPoint: UnitPoint(x: 0.5, y: 0.55)
+                            )
+                        )
+                        .padding(1)
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isEnabled ? 0.45 : 0.2),
+                                    Color.black.opacity(0.2),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(
+                    color: .black.opacity(isEnabled ? 0.26 : 0.12),
+                    radius: configuration.isPressed ? 1 : 3,
+                    x: 0,
+                    y: configuration.isPressed ? 0 : 2
+                )
+            )
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

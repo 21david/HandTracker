@@ -41,6 +41,12 @@ final class MacDashboardViewModel: ObservableObject {
         }
     }
 
+    /// Clears timed mute immediately (break alarms can resume).
+    func clearBreakAlarmMute() {
+        recordingAlarmMuteExpiresAt = nil
+        UserDefaults.standard.removeObject(forKey: Self.recordingAlarmMuteExpiryKey)
+    }
+
     func breakAlarmsMutedForPlaybackNow() -> Bool {
         refreshExpiredMuteIfNeeded(now: Date())
         guard let until = recordingAlarmMuteExpiresAt else { return false }
