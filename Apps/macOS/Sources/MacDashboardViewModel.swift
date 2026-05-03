@@ -14,13 +14,18 @@ final class MacDashboardViewModel: ObservableObject {
                 store?.recordKeystroke()
             }
         }
+        monitor.onMouseClick = { [weak store] in
+            Task { @MainActor in
+                store?.recordMouseClick()
+            }
+        }
         monitor.start()
 
         let server = HandTrackSyncServer(store: store)
         server.start()
         syncServer = server
 
-        syncStatus = "Recording keystrokes. Sync server runs on port 8787 while this app is open."
+        syncStatus = "Recording keystrokes and mouse clicks. Sync server runs on port 8787 while this app is open."
     }
 
     func stop() {

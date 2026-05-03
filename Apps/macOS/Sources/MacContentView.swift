@@ -26,14 +26,21 @@ struct MacContentView: View {
 
             HStack(spacing: 16) {
                 StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
+                StatCard(title: "Clicks This Hour", value: "\(store.clicksSinceStartOfCurrentHour())")
                 StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
                 StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("This hour")
+                Text("This hour — keystrokes")
                     .font(.headline)
                 MacKeystrokeFiveMinuteChart()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This hour — mouse clicks")
+                    .font(.headline)
+                MacMouseClickFiveMinuteChart()
             }
 
             Divider()
