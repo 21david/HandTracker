@@ -22,32 +22,11 @@ struct MacContentView: View {
                     StatCard(title: "Clicks This Hour", value: "\(store.clicksSinceStartOfCurrentHour())")
                     StatCard(title: "Pointer travel", value: formatTravelStat(store.mouseTravelPixelsSinceStartOfCurrentHour()))
                     StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
-                    StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
                 }
 
-                VStack(spacing: 12) {
-                    Text("Keystrokes")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 10)
-                    MacKeystrokeFiveMinuteChart()
-                }
-
-                VStack(spacing: 12) {
-                    Text("Mouse clicks")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 10)
-                    MacMouseClickFiveMinuteChart()
-                }
-
-                VStack(spacing: 12) {
-                    Text("Pointer travel")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 10)
-                    MacMouseTravelFiveMinuteChart()
-                }
+                MacKeystrokeFiveMinuteChart()
+                MacMouseClickFiveMinuteChart()
+                MacMouseTravelFiveMinuteChart()
 
                 Divider()
 
@@ -167,18 +146,24 @@ struct MacContentView: View {
                     .lineLimit(1)
             }
 
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Text("Mute")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     ForEach(MuteInterval.allCases) { interval in
-                        Button(interval.shortLabel) {
+                        Button {
                             viewModel.muteBreakAlarms(minutes: interval.rawValue)
+                        } label: {
+                            Text(interval.shortLabel)
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .frame(width: 40, height: 40)
+                                .contentShape(Circle())
                         }
                         .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.regular)
                         .help(interval.help)
                     }
                 }
