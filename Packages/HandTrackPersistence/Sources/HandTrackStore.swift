@@ -8,7 +8,7 @@ import AppKit
 @MainActor
 final class HandTrackStore: ObservableObject {
     @Published private(set) var hourlyLogs: [HourlyHandLog] = []
-    @Published private(set) var keystrokeEvents: [KeystrokeEvent] = []
+    @Published private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
 
     let storageDirectory: URL
 
@@ -81,14 +81,23 @@ final class HandTrackStore: ObservableObject {
     }
 
     func recordKeystroke(at timestamp: Date = Date()) {
-        let event = KeystrokeEvent(timestamp: timestamp)
-        keystrokeEvents.append(event)
-        save(event)
+        let minuteStart = timestamp.startOfMinute
+        if let index = keystrokeBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
+            keystrokeBuckets[index].keyCount += 1
+            save(keystrokeBuckets[index])
+        } else {
+            let bucket = KeystrokeMinuteBucket(minuteStart: minuteStart, keyCount: 1)
+            keystrokeBuckets.append(bucket)
+            keystrokeBuckets.sort { $0.minuteStart < $1.minuteStart }
+            save(bucket)
+        }
     }
 
     func keysSinceStartOfCurrentHour() -> Int {
         let hourStart = Date().startOfHour
-        return keystrokeEvents.filter { $0.timestamp >= hourStart }.count
+        return keystrokeBuckets
+            .filter { $0.minuteStart >= hourStart }
+            .reduce(0) { $0 + $1.keyCount }
     }
 
     func averageWordsPerMinuteForCurrentHour() -> Double {
@@ -117,10 +126,10 @@ final class HandTrackStore: ObservableObject {
             try openDatabaseIfNeeded()
             try createSchema()
             hourlyLogs = try loadHourlyLogs()
-            keystrokeEvents = try loadKeystrokeEvents()
+            keystrokeBuckets = try loadKeystrokeBuckets()
         } catch {
             hourlyLogs = []
-            keystrokeEvents = []
+            keystrokeBuckets = []
             print("Failed to load HandTrack data: \(error)")
         }
     }
@@ -147,13 +156,12 @@ final class HandTrackStore: ObservableObject {
         """)
 
         try execute("""
-        CREATE TABLE IF NOT EXISTS keystroke_events (
-            id TEXT PRIMARY KEY,
-            timestamp REAL NOT NULL
+        CREATE TABLE IF NOT EXISTS keystroke_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            key_count INTEGER NOT NULL
         );
         """)
 
-        try execute("CREATE INDEX IF NOT EXISTS idx_keystroke_events_timestamp ON keystroke_events(timestamp);")
         try execute("CREATE INDEX IF NOT EXISTS idx_hourly_logs_hour_start ON hourly_logs(hour_start);")
     }
 
@@ -165,11 +173,11 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    private func save(_ event: KeystrokeEvent) {
+    private func save(_ bucket: KeystrokeMinuteBucket) {
         do {
-            try saveOrThrow(event)
+            try saveOrThrow(bucket)
         } catch {
-            print("Failed to save keystroke: \(error)")
+            print("Failed to save keystroke bucket: \(error)")
         }
     }
 
@@ -201,13 +209,13 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    private func saveOrThrow(_ event: KeystrokeEvent) throws {
+    private func saveOrThrow(_ bucket: KeystrokeMinuteBucket) throws {
         try withStatement("""
-        INSERT OR IGNORE INTO keystroke_events (id, timestamp)
+        INSERT OR REPLACE INTO keystroke_minute_buckets (minute_start, key_count)
         VALUES (?, ?);
         """) { statement in
-            bindText(event.id.uuidString, to: statement, at: 1)
-            sqlite3_bind_double(statement, 2, event.timestamp.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 2, Int32(bucket.keyCount))
 
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.sqlite(message: lastSQLiteError)
@@ -238,19 +246,15 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    private func loadKeystrokeEvents() throws -> [KeystrokeEvent] {
+    private func loadKeystrokeBuckets() throws -> [KeystrokeMinuteBucket] {
         try query("""
-        SELECT id, timestamp
-        FROM keystroke_events
-        ORDER BY timestamp ASC;
+        SELECT minute_start, key_count
+        FROM keystroke_minute_buckets
+        ORDER BY minute_start ASC;
         """) { statement in
-            guard let id = UUID(uuidString: columnText(statement, at: 0)) else {
-                throw StoreError.invalidData("Invalid keystroke UUID")
-            }
-
-            return KeystrokeEvent(
-                id: id,
-                timestamp: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+            return KeystrokeMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                keyCount: Int(sqlite3_column_int(statement, 1))
             )
         }
     }

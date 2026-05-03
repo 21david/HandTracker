@@ -36,14 +36,11 @@ struct HourlyHandLog: Identifiable, Codable, Hashable {
     }
 }
 
-struct KeystrokeEvent: Identifiable, Codable, Hashable {
-    var id: UUID
-    var timestamp: Date
+struct KeystrokeMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var keyCount: Int
 
-    init(id: UUID = UUID(), timestamp: Date = Date()) {
-        self.id = id
-        self.timestamp = timestamp
-    }
+    var id: Date { minuteStart }
 }
 
 struct SyncResponse: Codable {
@@ -53,6 +50,10 @@ struct SyncResponse: Codable {
 extension Date {
     var startOfHour: Date {
         Calendar.current.dateInterval(of: .hour, for: self)?.start ?? self
+    }
+
+    var startOfMinute: Date {
+        Calendar.current.dateInterval(of: .minute, for: self)?.start ?? self
     }
 
     var displayHour: String {
