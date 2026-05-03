@@ -52,38 +52,17 @@ struct iOSContentView: View {
                 }
 
                 Section("Hourly Reminder") {
-                    Text(
-                        "Alerts begin at the start of the next hour—for example, enabling at 1:49 p.m. waits until 2:00 p.m., then repeats every clock hour."
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Stop for the night")
-                            .font(.subheadline.weight(.semibold))
-                        Text("No hourly alerts from that time until \(HourlyReminderManager.morningResumeHour):00.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Remind until:")
+                        HStack(spacing: 6) {
                             ForEach(HourlyReminderManager.QuietStopChoice.allCases) { choice in
                                 eveningStopChip(choice)
                             }
                         }
-                    }
-
-                    Text(
-                        """
-                        Twelve a.m.: late evening pings can still arrive; midnight through morning silence. One a.m.: \
-                        silent starting at 1:00 until \(HourlyReminderManager.morningResumeHour):00 (a midnight ding is still OK). Tap Enable again whenever you tweak these picks.
-                        """
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                    Button("Enable Hourly Reminder") {
-                        Task {
-                            await enableReminder()
+                        Button("Enable") {
+                            Task {
+                                await enableReminder()
+                            }
                         }
                     }
                 }
@@ -197,7 +176,7 @@ struct iOSContentView: View {
                 quietChoice: choice,
                 wakeHour: HourlyReminderManager.morningResumeHour
             )
-            statusMessage = "Hourly reminder scheduled (respects your night stop)."
+            statusMessage = "Reminder on"
         } catch {
             statusMessage = "Reminder failed: \(error.localizedDescription)"
         }

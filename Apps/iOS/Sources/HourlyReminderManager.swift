@@ -26,10 +26,10 @@ enum HourlyReminderManager {
 
         var pickerTitle: String {
             switch self {
-            case .tenPM: return "10 p.m."
-            case .elevenPM: return "11 p.m."
-            case .twelveAM: return "12 a.m."
-            case .oneAM: return "1 a.m."
+            case .tenPM: return "10 PM"
+            case .elevenPM: return "11 PM"
+            case .twelveAM: return "12 AM"
+            case .oneAM: return "1 AM"
             }
         }
 
