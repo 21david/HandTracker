@@ -27,20 +27,30 @@ struct MacContentView: View {
             HStack(spacing: 16) {
                 StatCard(title: "Keys This Hour", value: "\(store.keysSinceStartOfCurrentHour())")
                 StatCard(title: "Clicks This Hour", value: "\(store.clicksSinceStartOfCurrentHour())")
+                StatCard(title: "Pointer travel", value: formatTravelStat(store.mouseTravelPixelsSinceStartOfCurrentHour()))
                 StatCard(title: "Average WPM", value: String(format: "%.1f", store.averageWordsPerMinuteForCurrentHour()))
                 StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("This hour — keystrokes")
+            VStack(spacing: 8) {
+                Text("Keystrokes")
                     .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 MacKeystrokeFiveMinuteChart()
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("This hour — mouse clicks")
+            VStack(spacing: 8) {
+                Text("Mouse clicks")
                     .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 MacMouseClickFiveMinuteChart()
+            }
+
+            VStack(spacing: 8) {
+                Text("Pointer travel")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                MacMouseTravelFiveMinuteChart()
             }
 
             Divider()
@@ -79,6 +89,20 @@ struct MacContentView: View {
         .onDisappear {
             viewModel.stop()
         }
+    }
+
+    private func formatTravelStat(_ pixels: Double) -> String {
+        guard pixels.isFinite else { return "—" }
+        if pixels >= 1_000_000 {
+            return String(format: "%.1fM px", pixels / 1_000_000)
+        }
+        if pixels >= 10_000 {
+            return String(format: "%.0fk px", pixels / 1_000)
+        }
+        if pixels >= 1_000 {
+            return String(format: "%.1fk px", pixels / 1_000)
+        }
+        return String(format: "%.0f px", pixels)
     }
 }
 

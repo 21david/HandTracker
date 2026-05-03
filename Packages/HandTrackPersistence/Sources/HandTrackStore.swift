@@ -10,6 +10,7 @@ final class HandTrackStore: ObservableObject {
     @Published private(set) var hourlyLogs: [HourlyHandLog] = []
     @Published private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
     @Published private(set) var mouseClickBuckets: [MouseClickMinuteBucket] = []
+    @Published private(set) var mouseTravelBuckets: [MouseTravelMinuteBucket] = []
 
     let storageDirectory: URL
 
@@ -107,6 +108,20 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    func recordMouseTravelPixels(_ pixels: Double, at timestamp: Date = Date()) {
+        guard pixels.isFinite, pixels > 0 else { return }
+        let minuteStart = timestamp.startOfMinute
+        if let index = mouseTravelBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
+            mouseTravelBuckets[index].travelPixels += pixels
+            saveMouseTravel(mouseTravelBuckets[index])
+        } else {
+            let bucket = MouseTravelMinuteBucket(minuteStart: minuteStart, travelPixels: pixels)
+            mouseTravelBuckets.append(bucket)
+            mouseTravelBuckets.sort { $0.minuteStart < $1.minuteStart }
+            saveMouseTravel(bucket)
+        }
+    }
+
     func keysSinceStartOfCurrentHour() -> Int {
         let hourStart = Date().startOfHour
         return keystrokeBuckets
@@ -119,6 +134,13 @@ final class HandTrackStore: ObservableObject {
         return mouseClickBuckets
             .filter { $0.minuteStart >= hourStart }
             .reduce(0) { $0 + $1.clickCount }
+    }
+
+    func mouseTravelPixelsSinceStartOfCurrentHour() -> Double {
+        let hourStart = Date().startOfHour
+        return mouseTravelBuckets
+            .filter { $0.minuteStart >= hourStart }
+            .reduce(0.0) { $0 + $1.travelPixels }
     }
 
     func averageWordsPerMinuteForCurrentHour() -> Double {
@@ -176,6 +198,30 @@ final class HandTrackStore: ObservableObject {
         return slots
     }
 
+    /// Same trailing window; sums per-minute pixel travel into five-minute slots.
+    func mouseTravelByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [MouseTravelFiveMinuteSlot] {
+        let calendar = Calendar.current
+        let currentSlotStart = reference.startOfFiveMinuteSlot
+
+        var slots: [MouseTravelFiveMinuteSlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let minutesBack = 5 * (count - 1 - i)
+            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
+            guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
+
+            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
+                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+                return sum + bucket.travelPixels
+            }
+
+            slots.append(MouseTravelFiveMinuteSlot(slotStart: slotStart, travelPixels: travelPixels))
+        }
+
+        return slots
+    }
+
     func openStorageDirectory() {
         #if os(macOS)
         NSWorkspace.shared.open(storageDirectory)
@@ -197,10 +243,12 @@ final class HandTrackStore: ObservableObject {
             hourlyLogs = try loadHourlyLogs()
             keystrokeBuckets = try loadKeystrokeBuckets()
             mouseClickBuckets = try loadMouseClickBuckets()
+            mouseTravelBuckets = try loadMouseTravelBuckets()
         } catch {
             hourlyLogs = []
             keystrokeBuckets = []
             mouseClickBuckets = []
+            mouseTravelBuckets = []
             print("Failed to load HandTrack data: \(error)")
         }
     }
@@ -240,6 +288,13 @@ final class HandTrackStore: ObservableObject {
         );
         """)
 
+        try execute("""
+        CREATE TABLE IF NOT EXISTS mouse_travel_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            travel_pixels REAL NOT NULL
+        );
+        """)
+
         try execute("CREATE INDEX IF NOT EXISTS idx_hourly_logs_hour_start ON hourly_logs(hour_start);")
     }
 
@@ -264,6 +319,14 @@ final class HandTrackStore: ObservableObject {
             try saveMouseClickOrThrow(bucket)
         } catch {
             print("Failed to save mouse click bucket: \(error)")
+        }
+    }
+
+    private func saveMouseTravel(_ bucket: MouseTravelMinuteBucket) {
+        do {
+            try saveMouseTravelOrThrow(bucket)
+        } catch {
+            print("Failed to save mouse travel bucket: \(error)")
         }
     }
 
@@ -323,6 +386,20 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    private func saveMouseTravelOrThrow(_ bucket: MouseTravelMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO mouse_travel_minute_buckets (minute_start, travel_pixels)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 2, bucket.travelPixels)
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
     private func loadHourlyLogs() throws -> [HourlyHandLog] {
         try query("""
         SELECT id, hour_start, pain_level, minutes_hands_used, journal_entry, created_at, updated_at, sync_status
@@ -372,6 +449,19 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    private func loadMouseTravelBuckets() throws -> [MouseTravelMinuteBucket] {
+        try query("""
+        SELECT minute_start, travel_pixels
+        FROM mouse_travel_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return MouseTravelMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                travelPixels: sqlite3_column_double(statement, 1)
+            )
+        }
+    }
+
     private func execute(_ sql: String) throws {
         guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
             throw StoreError.sqlite(message: lastSQLiteError)
@@ -411,7 +501,7 @@ final class HandTrackStore: ObservableObject {
     }
 
     private func bindText(_ value: String, to statement: OpaquePointer, at index: Int32) {
-        value.withCString { pointer in
+        _ = value.withCString { pointer in
             sqlite3_bind_text(statement, index, pointer, -1, Self.sqliteTransient)
         }
     }

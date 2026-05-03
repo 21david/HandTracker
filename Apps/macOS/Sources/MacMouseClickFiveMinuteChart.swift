@@ -2,9 +2,9 @@ import Charts
 import SwiftUI
 
 private enum FiveMinuteMouseClickChart {
-    /// Clicks per five-minute slice that fills the vertical scale (~55/min if evenly spread).
-    static let comfortableClickCap: Double = 275
-    static let clicksAboveCapTowardFullOrange: Double = 40
+    /// Clicks per five-minute slice that fills the vertical scale (~24/min if evenly spread).
+    static let comfortableClickCap: Double = 120
+    static let clicksAboveCapTowardFullOrange: Double = 17
     static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
