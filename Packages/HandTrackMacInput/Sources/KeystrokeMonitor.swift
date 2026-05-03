@@ -5,6 +5,7 @@ import Foundation
 
 final class KeystrokeMonitor {
     var onKeystroke: (() -> Void)?
+    var onMouseClick: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -16,17 +17,27 @@ final class KeystrokeMonitor {
     func start() {
         guard eventTap == nil else { return }
 
-        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+        let mask = CGEventMask(
+            (1 << CGEventType.keyDown.rawValue)
+                | (1 << CGEventType.leftMouseDown.rawValue)
+        )
         let callback: CGEventTapCallBack = { _, type, event, refcon in
-            guard type == .keyDown,
-                  let refcon else {
+            guard let refcon else {
                 return Unmanaged.passUnretained(event)
             }
 
             let monitor = Unmanaged<KeystrokeMonitor>
                 .fromOpaque(refcon)
                 .takeUnretainedValue()
-            monitor.onKeystroke?()
+
+            switch type {
+            case .keyDown:
+                monitor.onKeystroke?()
+            case .leftMouseDown:
+                monitor.onMouseClick?()
+            default:
+                break
+            }
             return Unmanaged.passUnretained(event)
         }
 

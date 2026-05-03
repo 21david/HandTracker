@@ -9,6 +9,7 @@ import AppKit
 final class HandTrackStore: ObservableObject {
     @Published private(set) var hourlyLogs: [HourlyHandLog] = []
     @Published private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
+    @Published private(set) var mouseClickBuckets: [MouseClickMinuteBucket] = []
 
     let storageDirectory: URL
 
@@ -93,11 +94,31 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    func recordMouseClick(at timestamp: Date = Date()) {
+        let minuteStart = timestamp.startOfMinute
+        if let index = mouseClickBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
+            mouseClickBuckets[index].clickCount += 1
+            saveMouseClick(mouseClickBuckets[index])
+        } else {
+            let bucket = MouseClickMinuteBucket(minuteStart: minuteStart, clickCount: 1)
+            mouseClickBuckets.append(bucket)
+            mouseClickBuckets.sort { $0.minuteStart < $1.minuteStart }
+            saveMouseClick(bucket)
+        }
+    }
+
     func keysSinceStartOfCurrentHour() -> Int {
         let hourStart = Date().startOfHour
         return keystrokeBuckets
             .filter { $0.minuteStart >= hourStart }
             .reduce(0) { $0 + $1.keyCount }
+    }
+
+    func clicksSinceStartOfCurrentHour() -> Int {
+        let hourStart = Date().startOfHour
+        return mouseClickBuckets
+            .filter { $0.minuteStart >= hourStart }
+            .reduce(0) { $0 + $1.clickCount }
     }
 
     func averageWordsPerMinuteForCurrentHour() -> Double {
@@ -131,6 +152,30 @@ final class HandTrackStore: ObservableObject {
         return slots
     }
 
+    /// Same windowing as keystrokes—sums per-minute clicks into trailing five-minute slots.
+    func mouseClicksByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [MouseClickFiveMinuteSlot] {
+        let calendar = Calendar.current
+        let currentSlotStart = reference.startOfFiveMinuteSlot
+
+        var slots: [MouseClickFiveMinuteSlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let minutesBack = 5 * (count - 1 - i)
+            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
+            guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
+
+            let clickCount = mouseClickBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+                return sum + bucket.clickCount
+            }
+
+            slots.append(MouseClickFiveMinuteSlot(slotStart: slotStart, clickCount: clickCount))
+        }
+
+        return slots
+    }
+
     func openStorageDirectory() {
         #if os(macOS)
         NSWorkspace.shared.open(storageDirectory)
@@ -151,9 +196,11 @@ final class HandTrackStore: ObservableObject {
             try createSchema()
             hourlyLogs = try loadHourlyLogs()
             keystrokeBuckets = try loadKeystrokeBuckets()
+            mouseClickBuckets = try loadMouseClickBuckets()
         } catch {
             hourlyLogs = []
             keystrokeBuckets = []
+            mouseClickBuckets = []
             print("Failed to load HandTrack data: \(error)")
         }
     }
@@ -186,6 +233,13 @@ final class HandTrackStore: ObservableObject {
         );
         """)
 
+        try execute("""
+        CREATE TABLE IF NOT EXISTS mouse_click_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            click_count INTEGER NOT NULL
+        );
+        """)
+
         try execute("CREATE INDEX IF NOT EXISTS idx_hourly_logs_hour_start ON hourly_logs(hour_start);")
     }
 
@@ -202,6 +256,14 @@ final class HandTrackStore: ObservableObject {
             try saveOrThrow(bucket)
         } catch {
             print("Failed to save keystroke bucket: \(error)")
+        }
+    }
+
+    private func saveMouseClick(_ bucket: MouseClickMinuteBucket) {
+        do {
+            try saveMouseClickOrThrow(bucket)
+        } catch {
+            print("Failed to save mouse click bucket: \(error)")
         }
     }
 
@@ -247,6 +309,20 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    private func saveMouseClickOrThrow(_ bucket: MouseClickMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO mouse_click_minute_buckets (minute_start, click_count)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 2, Int32(bucket.clickCount))
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
     private func loadHourlyLogs() throws -> [HourlyHandLog] {
         try query("""
         SELECT id, hour_start, pain_level, minutes_hands_used, journal_entry, created_at, updated_at, sync_status
@@ -279,6 +355,19 @@ final class HandTrackStore: ObservableObject {
             return KeystrokeMinuteBucket(
                 minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
                 keyCount: Int(sqlite3_column_int(statement, 1))
+            )
+        }
+    }
+
+    private func loadMouseClickBuckets() throws -> [MouseClickMinuteBucket] {
+        try query("""
+        SELECT minute_start, click_count
+        FROM mouse_click_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return MouseClickMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                clickCount: Int(sqlite3_column_int(statement, 1))
             )
         }
     }
