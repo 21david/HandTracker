@@ -43,6 +43,18 @@ struct KeystrokeMinuteBucket: Identifiable, Codable, Hashable {
     var id: Date { minuteStart }
 }
 
+/// One five-minute span aligned to real clock boundaries (:00, :05, …).
+struct KeystrokeFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var keyCount: Int
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+    }
+}
+
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
@@ -54,6 +66,17 @@ extension Date {
 
     var startOfMinute: Date {
         Calendar.current.dateInterval(of: .minute, for: self)?.start ?? self
+    }
+
+    /// Start of the five-minute window that contains this instant (e.g. 8:07 → 8:05).
+    var startOfFiveMinuteSlot: Date {
+        let cal = Calendar.current
+        var c = cal.dateComponents([.year, .month, .day, .hour, .minute], from: self)
+        let m = c.minute ?? 0
+        c.minute = (m / 5) * 5
+        c.second = 0
+        c.nanosecond = 0
+        return cal.date(from: c) ?? self
     }
 
     var displayHour: String {

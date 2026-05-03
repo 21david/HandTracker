@@ -30,6 +30,12 @@ struct MacContentView: View {
                 StatCard(title: "iOS Logs", value: "\(store.hourlyLogs.count)")
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This hour")
+                    .font(.headline)
+                MacKeystrokeFiveMinuteChart()
+            }
+
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
