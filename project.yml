@@ -21,6 +21,8 @@ targets:
       - Packages/HandTrackSync/Sources
     resources:
       - Apps/iOS/Resources
+    dependencies:
+      - sdk: libsqlite3.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.ios
@@ -36,10 +38,14 @@ targets:
       - Packages/HandTrackMacInput/Sources
     resources:
       - Apps/macOS/Resources
+    dependencies:
+      - sdk: libsqlite3.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.david.handtrack.mac
         INFOPLIST_FILE: Apps/macOS/Resources/Info.plist
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development: david.espinosa.21@gmail.com (5MRCT284D8)"
 schemes:
   HandTrackiOS:
     build:
