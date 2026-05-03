@@ -1,29 +1,35 @@
 import AppKit
 import Foundation
 
-/// Plays audio when calendar-hour totals stay at or above thresholds in `HandTrackRecordingAlarmConfig`.
+/// Plays audio when **current five-minute slot** totals meet `HandTrackRecordingAlarmConfig`,
+/// unless the user muted alarms from the main window.
 @MainActor
 enum MacRecordingAlarmFeedback {
 
-    static func afterKeystrokeRecorded(on store: HandTrackStore) {
+    static func afterKeystrokeRecorded(on store: HandTrackStore, userMutedAlarms: Bool) {
+        guard !userMutedAlarms else { return }
         guard HandTrackRecordingAlarmConfig.isGloballyEnabled && HandTrackRecordingAlarmConfig.keystrokesAlarmEnabled else { return }
-        if store.keysSinceStartOfCurrentHour() >= HandTrackRecordingAlarmConfig.keystrokesPerHourThreshold {
+        if store.keysInCurrentFiveMinuteSlot() >= HandTrackRecordingAlarmConfig.keystrokesPerFiveMinuteThreshold {
             playConfiguredDing()
         }
     }
 
-    static func afterMouseClickRecorded(on store: HandTrackStore) {
+    static func afterMouseClickRecorded(on store: HandTrackStore, userMutedAlarms: Bool) {
+        guard !userMutedAlarms else { return }
         guard HandTrackRecordingAlarmConfig.isGloballyEnabled && HandTrackRecordingAlarmConfig.mouseClicksAlarmEnabled else { return }
-        if store.clicksSinceStartOfCurrentHour() >= HandTrackRecordingAlarmConfig.mouseClicksPerHourThreshold {
+        if store.clicksInCurrentFiveMinuteSlot() >= HandTrackRecordingAlarmConfig.mouseClicksPerFiveMinuteThreshold {
             playConfiguredDing()
         }
     }
 
-    /// Called after travel is written; `batchPixels` must be `> 0` so silent periods do not ding.
-    static func afterPointerTravelBatchRecorded(on store: HandTrackStore, batchPixels: Double) {
+    /// `batchPixels` must be `> 0` so idle periods stay silent between flushes.
+    static func afterPointerTravelBatchRecorded(on store: HandTrackStore, batchPixels: Double, userMutedAlarms: Bool) {
         guard batchPixels > 0 else { return }
+        guard !userMutedAlarms else { return }
         guard HandTrackRecordingAlarmConfig.isGloballyEnabled && HandTrackRecordingAlarmConfig.pointerTravelAlarmEnabled else { return }
-        if store.mouseTravelPixelsSinceStartOfCurrentHour() >= HandTrackRecordingAlarmConfig.pointerTravelPixelsPerHourThreshold {
+        if store.mouseTravelPixelsInCurrentFiveMinuteSlot()
+            >= HandTrackRecordingAlarmConfig.pointerTravelPixelsPerFiveMinuteThreshold
+        {
             playConfiguredDing()
         }
     }

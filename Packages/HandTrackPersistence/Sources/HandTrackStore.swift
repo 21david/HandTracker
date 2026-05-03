@@ -143,6 +143,41 @@ final class HandTrackStore: ObservableObject {
             .reduce(0.0) { $0 + $1.travelPixels }
     }
 
+    // MARK: - Current five-minute slot (clock-aligned like the histograms)
+
+    func keysInCurrentFiveMinuteSlot(reference: Date = Date()) -> Int {
+        let slotStart = reference.startOfFiveMinuteSlot
+        guard let slotEnd = Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) else {
+            return 0
+        }
+        return keystrokeBuckets.reduce(0) { sum, bucket in
+            guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+            return sum + bucket.keyCount
+        }
+    }
+
+    func clicksInCurrentFiveMinuteSlot(reference: Date = Date()) -> Int {
+        let slotStart = reference.startOfFiveMinuteSlot
+        guard let slotEnd = Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) else {
+            return 0
+        }
+        return mouseClickBuckets.reduce(0) { sum, bucket in
+            guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+            return sum + bucket.clickCount
+        }
+    }
+
+    func mouseTravelPixelsInCurrentFiveMinuteSlot(reference: Date = Date()) -> Double {
+        let slotStart = reference.startOfFiveMinuteSlot
+        guard let slotEnd = Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) else {
+            return 0
+        }
+        return mouseTravelBuckets.reduce(0.0) { sum, bucket in
+            guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+            return sum + bucket.travelPixels
+        }
+    }
+
     func averageWordsPerMinuteForCurrentHour() -> Double {
         let hourStart = Date().startOfHour
         let elapsedMinutes = max(Date().timeIntervalSince(hourStart) / 60, 1)

@@ -19,6 +19,13 @@ struct MacContentView: View {
 
                 Spacer()
 
+                Toggle("Mute break alarms", isOn: Binding(
+                    get: { viewModel.recordingAlarmsMuted },
+                    set: { viewModel.setRecordingAlarmsMuted($0) }
+                ))
+                .toggleStyle(.switch)
+                .help("Silence five-minute overload dings until you turn this off.")
+
                 Button("Open Data Folder") {
                     store.openStorageDirectory()
                 }

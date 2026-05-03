@@ -1,32 +1,35 @@
 import Foundation
 
-/// **Change thresholds and behavior here** — used by `MacRecordingAlarmFeedback` after each input event.
+/// **Edit thresholds here** — alarms use totals in the **current five-minute calendar slot**
+/// (:00–:05, :05–:10, …), same window as the rightmost histogram bar.
 ///
-/// Totals are computed for the **current calendar hour**, same as the stat cards.
+/// When a metric is **≥** its threshold inside that slot, each further key / click / movement batch
+/// can play sound (unless muted in the app header). Thresholds reset when the clock rolls into the next slot.
 enum HandTrackRecordingAlarmConfig {
 
-    // MARK: - Master
+    // MARK: - Developer / quick disable
 
-    /// Turns off all threshold dings without deleting call sites elsewhere.
+    /// Master switch compiled into the app — turn off builds without ripping out callers.
     static var isGloballyEnabled: Bool = true
 
-    /// `NSSound(named:)` base name (see `/System/Library/Sounds`).
+    /// `NSSound(named:)` base name (`/System/Library/Sounds`).
     static var systemSoundName: String = "Tink"
 
     // MARK: - Keystrokes
 
     static var keystrokesAlarmEnabled: Bool = true
-    /// After this many keys in the **current hour**, **each additional** key plays the sound.
-    static var keystrokesPerHourThreshold: Int = 4_000
+    /// Keys summed in the **current five-minute** window; default matches keystroke chart Y cap.
+    static var keystrokesPerFiveMinuteThreshold: Int = 275
 
     // MARK: - Mouse clicks
 
     static var mouseClicksAlarmEnabled: Bool = true
-    static var mouseClicksPerHourThreshold: Int = 800
+    /// Matches mouse-click histogram Y cap by default.
+    static var mouseClicksPerFiveMinuteThreshold: Int = 120
 
     // MARK: - Pointer travel
 
     static var pointerTravelAlarmEnabled: Bool = true
-    /// Planar distance in points/pixels for the **current hour** (matches the stat card).
-    static var pointerTravelPixelsPerHourThreshold: Double = 500_000
+    /// Points/pixels in the **current five-minute** window; matches pointer travel chart Y cap by default.
+    static var pointerTravelPixelsPerFiveMinuteThreshold: Double = 125_000
 }
