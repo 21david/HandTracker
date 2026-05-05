@@ -5,17 +5,29 @@ import SQLite3
 import AppKit
 #endif
 
+private struct DailyPainRollupSnapshot {
+    /// Legacy ``DailyPainRollup.painPlotValue`` (hourly means pipeline).
+    var legacyPainPlot: Double
+    /// Highest `max(left, right)` seen in any synced log that calendar day.
+    var worstHigherHand: Double
+    /// Mean of `max(left, right)` over every log that day (one value per entry).
+    var averageHigherHandPerLog: Double
+}
+
 @MainActor
 final class HandTrackStore: ObservableObject {
     @Published private(set) var hourlyLogs: [HourlyHandLog] = []
     @Published private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
     @Published private(set) var mouseClickBuckets: [MouseClickMinuteBucket] = []
     @Published private(set) var mouseTravelBuckets: [MouseTravelMinuteBucket] = []
+    @Published private(set) var dailyPainRollups: [DailyPainRollup] = []
 
     let storageDirectory: URL
 
     private let databaseURL: URL
     private var database: OpaquePointer?
+    /// Pain figures keyed by start-of-day (`timeIntervalSince1970`), mirrored in ``dailyPainRollups``.
+    private var dailyPainRollupSnapshots: [TimeInterval: DailyPainRollupSnapshot] = [:]
 
     init(storageDirectory: URL? = nil) {
         let baseDirectory = storageDirectory ?? Self.defaultStorageDirectory()
@@ -50,6 +62,7 @@ final class HandTrackStore: ObservableObject {
         )
         hourlyLogs.insert(log, at: 0)
         save(log)
+        hourlyLogsDidChangePersisted()
     }
 
     func importHourlyLogs(_ incomingLogs: [HourlyHandLog]) -> [UUID] {
@@ -74,7 +87,14 @@ final class HandTrackStore: ObservableObject {
             if $0.hourStart != $1.hourStart { return $0.hourStart > $1.hourStart }
             return $0.createdAt > $1.createdAt
         }
-        logsToSave.forEach(save)
+        for log in logsToSave {
+            do {
+                try saveOrThrow(log)
+            } catch {
+                print("Failed to persist imported hourly log: \(error)")
+            }
+        }
+        try? rebuildDailyPainRollupsFromHourlyLogs()
         return acceptedIDs
     }
 
@@ -131,24 +151,30 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    func keysSinceStartOfCurrentHour() -> Int {
-        let hourStart = Date().startOfHour
+    func keysSinceStartOfCurrentHour(reference: Date = Date()) -> Int {
+        let calendar = Calendar.current
+        let hourStart = reference.startOfHour
+        guard let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart) else { return 0 }
         return keystrokeBuckets
-            .filter { $0.minuteStart >= hourStart }
+            .filter { $0.minuteStart >= hourStart && $0.minuteStart < hourEnd }
             .reduce(0) { $0 + $1.keyCount }
     }
 
-    func clicksSinceStartOfCurrentHour() -> Int {
-        let hourStart = Date().startOfHour
+    func clicksSinceStartOfCurrentHour(reference: Date = Date()) -> Int {
+        let calendar = Calendar.current
+        let hourStart = reference.startOfHour
+        guard let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart) else { return 0 }
         return mouseClickBuckets
-            .filter { $0.minuteStart >= hourStart }
+            .filter { $0.minuteStart >= hourStart && $0.minuteStart < hourEnd }
             .reduce(0) { $0 + $1.clickCount }
     }
 
-    func mouseTravelPixelsSinceStartOfCurrentHour() -> Double {
-        let hourStart = Date().startOfHour
+    func mouseTravelPixelsSinceStartOfCurrentHour(reference: Date = Date()) -> Double {
+        let calendar = Calendar.current
+        let hourStart = reference.startOfHour
+        guard let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart) else { return 0 }
         return mouseTravelBuckets
-            .filter { $0.minuteStart >= hourStart }
+            .filter { $0.minuteStart >= hourStart && $0.minuteStart < hourEnd }
             .reduce(0.0) { $0 + $1.travelPixels }
     }
 
@@ -187,10 +213,10 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    func averageWordsPerMinuteForCurrentHour() -> Double {
-        let hourStart = Date().startOfHour
-        let elapsedMinutes = max(Date().timeIntervalSince(hourStart) / 60, 1)
-        let words = Double(keysSinceStartOfCurrentHour()) / 5
+    func averageWordsPerMinuteForCurrentHour(reference: Date = Date()) -> Double {
+        let hourStart = reference.startOfHour
+        let elapsedMinutes = max(reference.timeIntervalSince(hourStart) / 60, 1)
+        let words = Double(keysSinceStartOfCurrentHour(reference: reference)) / 5
         return words / elapsedMinutes
     }
 
@@ -266,6 +292,185 @@ final class HandTrackStore: ObservableObject {
         return slots
     }
 
+    /// The last `count` **calendar hours** ending at the hour containing `reference`, oldest → newest.
+    func computerUsageByTrailingCalendarHours(reference: Date = Date(), count: Int = 12) -> [ComputerUsageHourSlot] {
+        let calendar = Calendar.current
+        let anchorHour = reference.startOfHour
+
+        var slots: [ComputerUsageHourSlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let hoursBack = count - 1 - i
+            guard let hourStart = calendar.date(byAdding: .hour, value: -hoursBack, to: anchorHour),
+                  let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart)
+            else { continue }
+
+            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
+                return sum + bucket.keyCount
+            }
+            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
+                return sum + bucket.clickCount
+            }
+            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
+                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
+                return sum + bucket.travelPixels
+            }
+
+            slots.append(
+                ComputerUsageHourSlot(
+                    hourStart: hourStart,
+                    keystrokeCount: keystrokeCount,
+                    mouseClickCount: mouseClickCount,
+                    travelPixels: travelPixels
+                )
+            )
+        }
+
+        return slots
+    }
+
+    /// The last `count` **calendar days** ending on the day containing `reference`, oldest → newest.
+    func computerUsageByTrailingCalendarDays(reference: Date = Date(), count: Int = 12) -> [ComputerUsageDaySlot] {
+        let calendar = Calendar.current
+        let anchorDay = reference.startOfCalendarDay
+
+        var slots: [ComputerUsageDaySlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let daysBack = count - 1 - i
+            guard let dayStart = calendar.date(byAdding: .day, value: -daysBack, to: anchorDay),
+                  let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart)
+            else { continue }
+
+            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
+                return sum + bucket.keyCount
+            }
+            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
+                return sum + bucket.clickCount
+            }
+            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
+                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
+                return sum + bucket.travelPixels
+            }
+
+            slots.append(
+                ComputerUsageDaySlot(
+                    dayStart: dayStart,
+                    keystrokeCount: keystrokeCount,
+                    mouseClickCount: mouseClickCount,
+                    travelPixels: travelPixels
+                )
+            )
+        }
+
+        return slots
+    }
+
+    /// The calendar day bucket that contains ``reference`` (same as trailing `count: 1`).
+    func computerUsageOnCalendarDayContaining(reference: Date = Date()) -> ComputerUsageDaySlot? {
+        computerUsageByTrailingCalendarDays(reference: reference, count: 1).first
+    }
+
+    /// Bucket for the **previous** calendar day (relative to ``reference``) when trailing data includes it.
+    func computerUsageOnPreviousCalendarDay(reference: Date = Date()) -> ComputerUsageDaySlot? {
+        let slots = computerUsageByTrailingCalendarDays(reference: reference, count: 2)
+        guard slots.count >= 2 else { return slots.first }
+        return slots.first
+    }
+
+    /// Legacy daily figure: hourly means, then max(L̄, R̄). Order matches ``computerUsageByTrailingCalendarDays``.
+    func dailyPainMaxOfMeanHourlyAverages(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        days.map { dailyPainRollupSnapshots[$0.startOfCalendarDay.timeIntervalSince1970]?.legacyPainPlot }
+    }
+
+    /// Highest `max(left, right)` among all hand logs that calendar day (`nil` if no logs).
+    func dailyPainWorstHigherHandForDay(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        days.map { dailyPainRollupSnapshots[$0.startOfCalendarDay.timeIntervalSince1970]?.worstHigherHand }
+    }
+
+    /// Mean `max(left, right)` over every hourly log row that day (`nil` if no logs).
+    func dailyPainAverageHigherHandPerLoggedSample(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        days.map { dailyPainRollupSnapshots[$0.startOfCalendarDay.timeIntervalSince1970]?.averageHigherHandPerLog }
+    }
+
+    /// First iPhone log of each calendar day (by `hourStart`, then `createdAt`), then **left** hand pain. Order matches ``computerUsageByTrailingCalendarDays``.
+    func dailyPainFirstLoggedLeftHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        dailyPainFirstLoggedHand(forOrderedCalendarDayStarts: days, hand: \.painLevelLeft)
+    }
+
+    /// Same as ``dailyPainFirstLoggedLeftHand`` but **right** hand pain on that first log.
+    func dailyPainFirstLoggedRightHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        dailyPainFirstLoggedHand(forOrderedCalendarDayStarts: days, hand: \.painLevelRight)
+    }
+
+    private func dailyPainFirstLoggedHand(forOrderedCalendarDayStarts days: [Date], hand: KeyPath<HourlyHandLog, Double>) -> [Double?] {
+        let cal = Calendar.current
+        return days.map { day in
+            let dayStart = day.startOfCalendarDay
+            let dayLogs = hourlyLogs.filter { cal.isDate($0.hourStart, inSameDayAs: dayStart) }
+            guard let first = dayLogs.min(by: {
+                if $0.hourStart != $1.hourStart { return $0.hourStart < $1.hourStart }
+                return $0.createdAt < $1.createdAt
+            }) else { return nil }
+            return first[keyPath: hand]
+        }
+    }
+
+    /// Highest **left‑hand** pain among all synced logs whose hour falls on that calendar day (`nil` if none).
+    func dailyPainWorstLoggedLeftHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelLeft) { vals in vals.max()! }
+    }
+
+    /// Highest **right‑hand** pain that day (`nil` if none).
+    func dailyPainWorstLoggedRightHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelRight) { vals in vals.max()! }
+    }
+
+    /// Mean **left‑hand** pain averaged over **every log row** that calendar day (`nil` if none).
+    func dailyPainMeanLoggedLeftHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelLeft) { vals in
+            vals.reduce(0, +) / Double(vals.count)
+        }
+    }
+
+    /// Mean **right‑hand** pain over all log rows that day (`nil` if none).
+    func dailyPainMeanLoggedRightHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
+        dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelRight) { vals in
+            vals.reduce(0, +) / Double(vals.count)
+        }
+    }
+
+    private func dailyPainLoggedHandAggregate(
+        forOrderedCalendarDayStarts days: [Date],
+        hand: KeyPath<HourlyHandLog, Double>,
+        aggregate: ([Double]) -> Double
+    ) -> [Double?] {
+        let cal = Calendar.current
+        return days.map { day in
+            let dayStart = day.startOfCalendarDay
+            let vals = hourlyLogs.filter { cal.isDate($0.hourStart, inSameDayAs: dayStart) }.map { $0[keyPath: hand] }
+            guard !vals.isEmpty else { return nil }
+            return aggregate(vals)
+        }
+    }
+
+    /// For ordered hour starts from ``computerUsageByTrailingCalendarHours``, max of left/right logged pain (`nil` where no hourly log landed in that bucket).
+    func loggedPainHigherOfHandsByHour(forOrderedHourStarts hours: [Date]) -> [Double?] {
+        hours.map { h in
+            let highs = hourlyLogs
+                .filter { $0.hourStart == h }
+                .map { max($0.painLevelLeft, $0.painLevelRight) }
+            guard let m = highs.max() else { return nil }
+            return m
+        }
+    }
+
     func openStorageDirectory() {
         #if os(macOS)
         NSWorkspace.shared.open(storageDirectory)
@@ -274,6 +479,114 @@ final class HandTrackStore: ObservableObject {
 
     func reloadFromDisk() {
         load()
+    }
+
+    private func rebuildDailyPainRollupsFromHourlyLogs() throws {
+        dailyPainRollupSnapshots.removeAll()
+        try execute("DELETE FROM daily_pain_rollups;")
+
+        var nested: [TimeInterval: [TimeInterval: [(Double, Double)]]] = [:]
+        var logHigherPerDay: [TimeInterval: [Double]] = [:]
+
+        for log in hourlyLogs {
+            let dayKey = log.hourStart.startOfCalendarDay.timeIntervalSince1970
+            let hourKey = log.hourStart.startOfHour.timeIntervalSince1970
+            nested[dayKey, default: [:]][hourKey, default: []].append((log.painLevelLeft, log.painLevelRight))
+
+            let higher = max(log.painLevelLeft, log.painLevelRight)
+            logHigherPerDay[dayKey, default: []].append(higher)
+        }
+
+        var rollups: [DailyPainRollup] = []
+        rollups.reserveCapacity(nested.count)
+
+        for (dayKey, hourMap) in nested {
+            var leftHourAvgs: [Double] = []
+            var rightHourAvgs: [Double] = []
+
+            for (_, pairs) in hourMap.sorted(by: { $0.key < $1.key }) {
+                let n = Double(pairs.count)
+                let sumL = pairs.reduce(0.0) { $0 + $1.0 }
+                let sumR = pairs.reduce(0.0) { $0 + $1.1 }
+                leftHourAvgs.append(sumL / n)
+                rightHourAvgs.append(sumR / n)
+            }
+            guard !leftHourAvgs.isEmpty else { continue }
+
+            let highs = logHigherPerDay[dayKey] ?? []
+            guard !highs.isEmpty else { continue }
+
+            let hCount = leftHourAvgs.count
+            let meanLeft = leftHourAvgs.reduce(0.0, +) / Double(hCount)
+            let meanRight = rightHourAvgs.reduce(0.0, +) / Double(hCount)
+            let plot = max(meanLeft, meanRight)
+            let worstHigher = highs.max() ?? plot
+            let avgLoggedHigher = highs.reduce(0.0, +) / Double(highs.count)
+
+            try upsertDailyPainRollup(
+                dayStart: dayKey,
+                meanLeft: meanLeft,
+                meanRight: meanRight,
+                plot: plot,
+                worstHigherHand: worstHigher,
+                avgLoggedHigherHand: avgLoggedHigher,
+                hoursWithLogs: hCount
+            )
+
+            dailyPainRollupSnapshots[dayKey] = DailyPainRollupSnapshot(
+                legacyPainPlot: plot,
+                worstHigherHand: worstHigher,
+                averageHigherHandPerLog: avgLoggedHigher
+            )
+
+            rollups.append(
+                DailyPainRollup(
+                    dayStart: Date(timeIntervalSince1970: dayKey),
+                    meanOfHourlyAverageLeft: meanLeft,
+                    meanOfHourlyAverageRight: meanRight,
+                    painPlotValue: plot,
+                    worstHigherHandPain: worstHigher,
+                    averageHigherHandPainPerLog: avgLoggedHigher,
+                    hoursWithLogs: hCount
+                )
+            )
+        }
+
+        rollups.sort { $0.dayStart > $1.dayStart }
+        dailyPainRollups = rollups
+    }
+
+    private func upsertDailyPainRollup(
+        dayStart: TimeInterval,
+        meanLeft: Double,
+        meanRight: Double,
+        plot: Double,
+        worstHigherHand: Double,
+        avgLoggedHigherHand: Double,
+        hoursWithLogs: Int
+    ) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO daily_pain_rollups (
+            day_start,
+            mean_hourly_avg_left,
+            mean_hourly_avg_right,
+            pain_plot_value,
+            worst_higher_hand,
+            avg_logged_higher_hand,
+            hours_with_logs
+        ) VALUES (?, ?, ?, ?, ?, ?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, dayStart)
+            sqlite3_bind_double(statement, 2, meanLeft)
+            sqlite3_bind_double(statement, 3, meanRight)
+            sqlite3_bind_double(statement, 4, plot)
+            sqlite3_bind_double(statement, 5, worstHigherHand)
+            sqlite3_bind_double(statement, 6, avgLoggedHigherHand)
+            sqlite3_bind_int(statement, 7, Int32(hoursWithLogs))
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
     }
 
     private func load() {
@@ -288,11 +601,14 @@ final class HandTrackStore: ObservableObject {
             keystrokeBuckets = try loadKeystrokeBuckets()
             mouseClickBuckets = try loadMouseClickBuckets()
             mouseTravelBuckets = try loadMouseTravelBuckets()
+            try rebuildDailyPainRollupsFromHourlyLogs()
         } catch {
             hourlyLogs = []
             keystrokeBuckets = []
             mouseClickBuckets = []
             mouseTravelBuckets = []
+            dailyPainRollups = []
+            dailyPainRollupSnapshots = [:]
             print("Failed to load HandTrack data: \(error)")
         }
     }
@@ -343,8 +659,47 @@ final class HandTrackStore: ObservableObject {
 
         try execute("CREATE INDEX IF NOT EXISTS idx_hourly_logs_hour_start ON hourly_logs(hour_start);")
 
+        try execute("""
+        CREATE TABLE IF NOT EXISTS daily_pain_rollups (
+            day_start REAL PRIMARY KEY NOT NULL,
+            mean_hourly_avg_left REAL NOT NULL,
+            mean_hourly_avg_right REAL NOT NULL,
+            pain_plot_value REAL NOT NULL,
+            worst_higher_hand REAL NOT NULL,
+            avg_logged_higher_hand REAL NOT NULL,
+            hours_with_logs INTEGER NOT NULL
+        );
+        """)
+
+        try migrateDailyPainRollupSnapshotColumnsIfNeeded()
         try migrateHourlyLogsPainSidesIfNeeded()
         try migrateHourlyPainLevelsToHalfStepStorageIfNeeded()
+    }
+
+    private func dailyPainRollupColumnNames() throws -> Set<String> {
+        try query("PRAGMA table_info(daily_pain_rollups)") { statement in
+            columnText(statement, at: 1)
+        }
+        .reduce(into: Set<String>()) { $0.insert($1) }
+    }
+
+    /// Adds daily worst / per‑log‑average snapshot columns introduced after the original rollup table.
+    private func migrateDailyPainRollupSnapshotColumnsIfNeeded() throws {
+        var columns = try dailyPainRollupColumnNames()
+        if columns.isEmpty { return }
+
+        if !columns.contains("worst_higher_hand") {
+            try execute("""
+                ALTER TABLE daily_pain_rollups ADD COLUMN worst_higher_hand REAL NOT NULL DEFAULT 0;
+            """)
+            columns.insert("worst_higher_hand")
+        }
+        if !columns.contains("avg_logged_higher_hand") {
+            try execute("""
+                ALTER TABLE daily_pain_rollups ADD COLUMN avg_logged_higher_hand REAL NOT NULL DEFAULT 0;
+            """)
+        }
+        // Rows are rewritten in ``rebuildDailyPainRollupsFromHourlyLogs()`` after logs load.
     }
 
     private func hourlyLogColumnNames() throws -> Set<String> {
@@ -436,6 +791,11 @@ final class HandTrackStore: ObservableObject {
         } catch {
             print("Failed to save hourly log: \(error)")
         }
+    }
+
+    /// Call after persisted hourly-log mutations that skip ``save(_:)`` (SQLite only).
+    private func hourlyLogsDidChangePersisted() {
+        try? rebuildDailyPainRollupsFromHourlyLogs()
     }
 
     private func save(_ bucket: KeystrokeMinuteBucket) {

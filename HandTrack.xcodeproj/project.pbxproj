@@ -28,6 +28,9 @@
 		B2C3D4E56F708192A3B4C5D6 /* MacMouseClickFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D45E6F708192A3B4C5 /* MacMouseClickFiveMinuteChart.swift */; };
 		B827364554463728394A5061 /* MacMouseTravelFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C918273645564738495A6071 /* MacMouseTravelFiveMinuteChart.swift */; };
 		BCB90670AA142626C83EAC1B /* MacKeystrokeFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9E63403B96632533425BBA /* MacKeystrokeFiveMinuteChart.swift */; };
+		EA10B928374655443322110E /* MacTwelveHourStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA10B928374655443322110F /* MacTwelveHourStackedUsagePainChart.swift */; };
+		F2A2B2C2D2E2F30405060708 /* MacTwelveDayStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A2B2C2D2E2F30405060709 /* MacTwelveDayStackedUsagePainChart.swift */; };
+		FEDD00112233AABB44556601 /* MacUsageDashboardSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEDD00112233AABB44556602 /* MacUsageDashboardSummary.swift */; };
 		D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
 		E38114F530AD2EFD9D6C8DD6 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 91F2A4B53502C34670516B15 /* libsqlite3.tbd */; };
 /* End PBXBuildFile section */
@@ -48,6 +51,9 @@
 		A7B8C9D0E1F2031425361708 /* HandTrackRecordingAlarmConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackRecordingAlarmConfig.swift; sourceTree = "<group>"; };
 		A7B8C9D0E1F203142536170A /* MacRecordingAlarmFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingAlarmFeedback.swift; sourceTree = "<group>"; };
 		E2F3A4B5C6D708192A3B4C5D /* MacFiveMinuteBarStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFiveMinuteBarStyle.swift; sourceTree = "<group>"; };
+		EA10B928374655443322110F /* MacTwelveHourStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveHourStackedUsagePainChart.swift; sourceTree = "<group>"; };
+		F2A2B2C2D2E2F30405060709 /* MacTwelveDayStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveDayStackedUsagePainChart.swift; sourceTree = "<group>"; };
+		FEDD00112233AABB44556602 /* MacUsageDashboardSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUsageDashboardSummary.swift; sourceTree = "<group>"; };
 		BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C63D8CC683C076EC281966D5 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		C918273645564738495A6071 /* MacMouseTravelFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseTravelFiveMinuteChart.swift; sourceTree = "<group>"; };
@@ -96,6 +102,9 @@
 				3B9E63403B96632533425BBA /* MacKeystrokeFiveMinuteChart.swift */,
 				A1B2C3D45E6F708192A3B4C5 /* MacMouseClickFiveMinuteChart.swift */,
 				C918273645564738495A6071 /* MacMouseTravelFiveMinuteChart.swift */,
+				EA10B928374655443322110F /* MacTwelveHourStackedUsagePainChart.swift */,
+				F2A2B2C2D2E2F30405060709 /* MacTwelveDayStackedUsagePainChart.swift */,
+				FEDD00112233AABB44556602 /* MacUsageDashboardSummary.swift */,
 			);
 			name = Sources;
 			path = Apps/macOS/Sources;
@@ -279,6 +288,9 @@
 				BCB90670AA142626C83EAC1B /* MacKeystrokeFiveMinuteChart.swift in Sources */,
 				B2C3D4E56F708192A3B4C5D6 /* MacMouseClickFiveMinuteChart.swift in Sources */,
 				B827364554463728394A5061 /* MacMouseTravelFiveMinuteChart.swift in Sources */,
+				EA10B928374655443322110E /* MacTwelveHourStackedUsagePainChart.swift in Sources */,
+				F2A2B2C2D2E2F30405060708 /* MacTwelveDayStackedUsagePainChart.swift in Sources */,
+				FEDD00112233AABB44556601 /* MacUsageDashboardSummary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
