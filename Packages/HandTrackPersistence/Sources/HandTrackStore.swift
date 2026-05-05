@@ -26,7 +26,7 @@ final class HandTrackStore: ObservableObject {
 
     private let databaseURL: URL
     private var database: OpaquePointer?
-    /// Pain figures keyed by start-of-day (`timeIntervalSince1970`), mirrored in ``dailyPainRollups``.
+    /// Pain figures keyed by ``Date/startOfHandTrackingDay`` epoch (`timeIntervalSince1970`), mirrored in ``dailyPainRollups``.
     private var dailyPainRollupSnapshots: [TimeInterval: DailyPainRollupSnapshot] = [:]
 
     init(storageDirectory: URL? = nil) {
@@ -332,10 +332,10 @@ final class HandTrackStore: ObservableObject {
         return slots
     }
 
-    /// The last `count` **calendar days** ending on the day containing `reference`, oldest → newest.
+    /// The last `count` **hand-tracking days** (3 AM → 3 AM) ending on the day segment containing `reference`, oldest → newest.
     func computerUsageByTrailingCalendarDays(reference: Date = Date(), count: Int = 12) -> [ComputerUsageDaySlot] {
         let calendar = Calendar.current
-        let anchorDay = reference.startOfCalendarDay
+        let anchorDay = reference.startOfHandTrackingDay
 
         var slots: [ComputerUsageDaySlot] = []
         slots.reserveCapacity(count)
@@ -372,12 +372,12 @@ final class HandTrackStore: ObservableObject {
         return slots
     }
 
-    /// The calendar day bucket that contains ``reference`` (same as trailing `count: 1`).
+    /// Segment for the hand-tracking window that contains ``reference`` (same as trailing `count: 1`).
     func computerUsageOnCalendarDayContaining(reference: Date = Date()) -> ComputerUsageDaySlot? {
         computerUsageByTrailingCalendarDays(reference: reference, count: 1).first
     }
 
-    /// Bucket for the **previous** calendar day (relative to ``reference``) when trailing data includes it.
+    /// Bucket for the **prior** hand-tracking day (relative to ``reference``) when trailing data includes it.
     func computerUsageOnPreviousCalendarDay(reference: Date = Date()) -> ComputerUsageDaySlot? {
         let slots = computerUsageByTrailingCalendarDays(reference: reference, count: 2)
         guard slots.count >= 2 else { return slots.first }
@@ -386,20 +386,20 @@ final class HandTrackStore: ObservableObject {
 
     /// Legacy daily figure: hourly means, then max(L̄, R̄). Order matches ``computerUsageByTrailingCalendarDays``.
     func dailyPainMaxOfMeanHourlyAverages(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
-        days.map { dailyPainRollupSnapshots[$0.startOfCalendarDay.timeIntervalSince1970]?.legacyPainPlot }
+        days.map { dailyPainRollupSnapshots[$0.timeIntervalSince1970]?.legacyPainPlot }
     }
 
-    /// Highest `max(left, right)` among all hand logs that calendar day (`nil` if no logs).
+    /// Highest `max(left, right)` among all hand logs in that **hand-tracking** segment (`nil` if no logs).
     func dailyPainWorstHigherHandForDay(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
-        days.map { dailyPainRollupSnapshots[$0.startOfCalendarDay.timeIntervalSince1970]?.worstHigherHand }
+        days.map { dailyPainRollupSnapshots[$0.timeIntervalSince1970]?.worstHigherHand }
     }
 
-    /// Mean `max(left, right)` over every hourly log row that day (`nil` if no logs).
+    /// Mean `max(left, right)` over every hourly log row in that segment (`nil` if no logs).
     func dailyPainAverageHigherHandPerLoggedSample(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
-        days.map { dailyPainRollupSnapshots[$0.startOfCalendarDay.timeIntervalSince1970]?.averageHigherHandPerLog }
+        days.map { dailyPainRollupSnapshots[$0.timeIntervalSince1970]?.averageHigherHandPerLog }
     }
 
-    /// First iPhone log of each calendar day (by `hourStart`, then `createdAt`), then **left** hand pain. Order matches ``computerUsageByTrailingCalendarDays``.
+    /// First iPhone log in each **hand-tracking** segment (by `hourStart`, then `createdAt`). Order matches ``computerUsageByTrailingCalendarDays``.
     func dailyPainFirstLoggedLeftHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
         dailyPainFirstLoggedHand(forOrderedCalendarDayStarts: days, hand: \.painLevelLeft)
     }
@@ -411,9 +411,9 @@ final class HandTrackStore: ObservableObject {
 
     private func dailyPainFirstLoggedHand(forOrderedCalendarDayStarts days: [Date], hand: KeyPath<HourlyHandLog, Double>) -> [Double?] {
         let cal = Calendar.current
-        return days.map { day in
-            let dayStart = day.startOfCalendarDay
-            let dayLogs = hourlyLogs.filter { cal.isDate($0.hourStart, inSameDayAs: dayStart) }
+        return days.map { dayStart in
+            guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+            let dayLogs = hourlyLogs.filter { $0.hourStart >= dayStart && $0.hourStart < dayEnd }
             guard let first = dayLogs.min(by: {
                 if $0.hourStart != $1.hourStart { return $0.hourStart < $1.hourStart }
                 return $0.createdAt < $1.createdAt
@@ -422,24 +422,24 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
-    /// Highest **left‑hand** pain among all synced logs whose hour falls on that calendar day (`nil` if none).
+    /// Highest **left‑hand** pain among logs in that **hand-tracking** segment (`nil` if none).
     func dailyPainWorstLoggedLeftHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
         dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelLeft) { vals in vals.max()! }
     }
 
-    /// Highest **right‑hand** pain that day (`nil` if none).
+    /// Highest **right‑hand** pain in that segment (`nil` if none).
     func dailyPainWorstLoggedRightHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
         dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelRight) { vals in vals.max()! }
     }
 
-    /// Mean **left‑hand** pain averaged over **every log row** that calendar day (`nil` if none).
+    /// Mean **left‑hand** pain averaged over **every log row** in that segment (`nil` if none).
     func dailyPainMeanLoggedLeftHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
         dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelLeft) { vals in
             vals.reduce(0, +) / Double(vals.count)
         }
     }
 
-    /// Mean **right‑hand** pain over all log rows that day (`nil` if none).
+    /// Mean **right‑hand** pain over all log rows in that segment (`nil` if none).
     func dailyPainMeanLoggedRightHand(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
         dailyPainLoggedHandAggregate(forOrderedCalendarDayStarts: days, hand: \.painLevelRight) { vals in
             vals.reduce(0, +) / Double(vals.count)
@@ -452,9 +452,9 @@ final class HandTrackStore: ObservableObject {
         aggregate: ([Double]) -> Double
     ) -> [Double?] {
         let cal = Calendar.current
-        return days.map { day in
-            let dayStart = day.startOfCalendarDay
-            let vals = hourlyLogs.filter { cal.isDate($0.hourStart, inSameDayAs: dayStart) }.map { $0[keyPath: hand] }
+        return days.map { dayStart in
+            guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+            let vals = hourlyLogs.filter { $0.hourStart >= dayStart && $0.hourStart < dayEnd }.map { $0[keyPath: hand] }
             guard !vals.isEmpty else { return nil }
             return aggregate(vals)
         }
@@ -489,7 +489,7 @@ final class HandTrackStore: ObservableObject {
         var logHigherPerDay: [TimeInterval: [Double]] = [:]
 
         for log in hourlyLogs {
-            let dayKey = log.hourStart.startOfCalendarDay.timeIntervalSince1970
+            let dayKey = log.hourStart.startOfHandTrackingDay.timeIntervalSince1970
             let hourKey = log.hourStart.startOfHour.timeIntervalSince1970
             nested[dayKey, default: [:]][hourKey, default: []].append((log.painLevelLeft, log.painLevelRight))
 

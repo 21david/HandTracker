@@ -1,11 +1,19 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 struct iOSContentView: View {
+    private static let hourlyReminderDesiredAppStorageKey = "HandTrack.hourlyReminderDesired"
+
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: HandTrackStore
     @AppStorage("macSyncHost") private var macSyncHost = ""
     @AppStorage("hourlyReminderQuietStop") private var quietStopRaw: Int =
         HourlyReminderManager.QuietStopChoice.elevenPM.rawValue
+    @AppStorage("HandTrack.hourlyReminderDesired") private var hourlyReminderDesired = false
+    @AppStorage("HandTrack.hourlyReminderMorningStartHour") private var reminderMorningStartHourRaw =
+        HourlyReminderManager.fallbackMorningStartHour
+
     @FocusState private var focusedField: Field?
 
     @State private var painLevelLeft = 1.0
@@ -17,6 +25,39 @@ struct iOSContentView: View {
     @State private var isSyncing = false
     @State private var showHighPainSheet = false
     @State private var highPainPickSideLeft = true
+    @State private var isTogglingHourlyReminder = false
+    @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var nextReminderDisplayTime: String?
+    @State private var expandedJournalLogIDs: Set<UUID> = []
+
+    /// Readable “next reminder” line: today shows time only; otherwise includes date (“Tomorrow …” / short date).
+    private static func nextReminderSubtitle(for date: Date) -> String {
+        let calendar = Calendar.current
+        let timeOnly: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = .current
+            f.timeStyle = .short
+            f.dateStyle = .none
+            return f
+        }()
+        let t = timeOnly.string(from: date)
+        if calendar.isDateInToday(date) {
+            return t
+        }
+        if calendar.isDateInTomorrow(date) {
+            return "Tomorrow \(t)"
+        }
+        let full = DateFormatter()
+        full.locale = .current
+        full.dateStyle = .medium
+        full.timeStyle = .short
+        return full.string(from: date)
+    }
+
+    /// Effective “Reminders start” hour (stored **8 … 11** in App Storage).
+    private var effectiveMorningStartHour: Int {
+        HourlyReminderManager.clampedMorningStartHour(reminderMorningStartHourRaw)
+    }
 
     private enum Field {
         case journal
@@ -71,6 +112,18 @@ struct iOSContentView: View {
         )
     }
 
+    private var hourlyLogsLogicalToday: [HourlyHandLog] {
+        let windowStart = Self.logicalHandTrackingDayStart()
+        return store.hourlyLogs
+            .filter { $0.createdAt >= windowStart }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// “Hand day” rolls at **3:00 AM** local — times before that belong to the previous day’s window.
+    private static func logicalHandTrackingDayStart(reference: Date = Date()) -> Date {
+        reference.startOfHandTrackingDay
+    }
+
     private var savePillButton: some View {
         let empty = journalEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return Button {
@@ -87,6 +140,69 @@ struct iOSContentView: View {
         .buttonStyle(.plain)
         .disabled(empty)
         .opacity(empty ? 0.45 : 1)
+    }
+
+    private var hourlyReminderEnablePillButton: some View {
+        let busy = isTogglingHourlyReminder
+        let showDisable = hourlyReminderDesired
+
+        return Button {
+            Task {
+                await performHourlyReminderPrimaryAction()
+            }
+        } label: {
+            Text(hourlyReminderPillTitle(showDisable: showDisable, busy: busy))
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 11)
+                .background(
+                    Capsule().fill(
+                        showDisable ? Color(UIColor.systemOrange) : Color(UIColor.systemBlue)
+                    )
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.borderless)
+        .disabled(busy)
+        .opacity(busy ? 0.88 : 1)
+    }
+
+    /// Reads live state when tapped (avoids stale enable/disable branching in nested button actions).
+    @MainActor
+    private func performHourlyReminderPrimaryAction() async {
+        focusedField = nil
+        if hourlyReminderDesired {
+            await disableHourlyReminders()
+        } else {
+            await enableReminder()
+        }
+    }
+
+    private var hourlyReminderStatusCaption: String {
+        if isTogglingHourlyReminder {
+            return hourlyReminderDesired ? "Stopping…" : "Enabling…"
+        }
+        if notificationAuthorizationStatus == .denied {
+            if hourlyReminderDesired {
+                return "Reminders paused — allow HandTrack notifications in Settings, then open the app to rebuild the schedule."
+            }
+            return "Currently off — allow notifications in Settings, then tap Enable."
+        }
+        if hourlyReminderDesired {
+            if let time = nextReminderDisplayTime {
+                return "Currently on. Next reminder at \(time)."
+            }
+            return "Currently on."
+        }
+        return "Currently off — tap Enable to turn on."
+    }
+
+    private func hourlyReminderPillTitle(showDisable: Bool, busy: Bool) -> String {
+        if busy {
+            return showDisable ? "Stopping…" : "Enabling…"
+        }
+        return showDisable ? "Disable" : "Enable"
     }
 
     var body: some View {
@@ -113,19 +229,35 @@ struct iOSContentView: View {
                 }
 
                 Section("Hourly Reminder") {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Reminders start")
+                        HStack(spacing: 6) {
+                            ForEach(HourlyReminderManager.reminderMorningStartChoices, id: \.self) { hour24 in
+                                reminderMorningStartChip(hour24)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
                         Text("Remind until:")
                         HStack(spacing: 6) {
                             ForEach(HourlyReminderManager.QuietStopChoice.allCases) { choice in
                                 eveningStopChip(choice)
                             }
                         }
-                        Button("Enable") {
-                            Task {
-                                await enableReminder()
-                            }
-                        }
                     }
+
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(hourlyReminderStatusCaption)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        hourlyReminderEnablePillButton
+                    }
+                    .padding(.top, -8)
+                    .listRowSeparator(.hidden, edges: .top)
                 }
 
                 Section("Sync To Mac") {
@@ -151,27 +283,24 @@ struct iOSContentView: View {
                     .disabled(isSyncing || store.pendingLogs().isEmpty || macSyncHost.isEmpty)
                 }
 
-                Section("Recent Logs") {
-                    if store.hourlyLogs.isEmpty {
-                        Text("No logs yet")
+                Section {
+                    if hourlyLogsLogicalToday.isEmpty {
+                        Text(emptyTodayLogsBanner)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(store.hourlyLogs.prefix(5)) { log in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("\(log.createdAt.displayTime) · \(log.hourStart.displayHourBucket)")
-                                    .font(.headline)
-                                Text(
-                                    "L \(log.painLevelLeft.handTrackPainCompactLabel), R \(log.painLevelRight.handTrackPainCompactLabel) · \(log.minutesHandsUsed) min · \(log.syncStatus.rawValue)"
-                                )
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                if !log.journalEntry.isEmpty {
-                                    Text(log.journalEntry)
-                                        .font(.body)
-                                }
-                            }
+                        ForEach(hourlyLogsLogicalToday) { log in
+                            TodaysJournalLogRow(
+                                log: log,
+                                expandedJournalLogIDs: $expandedJournalLogIDs,
+                                previewLineLimit: 6
+                            )
                         }
                     }
+                } header: {
+                    Text("Today's logs")
+                } footer: {
+                    Text("Entries since 3:00 AM. A new hand day starts at 3:00 AM.")
+                        .foregroundStyle(.secondary)
                 }
 
                 Section {
@@ -182,6 +311,15 @@ struct iOSContentView: View {
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 reconcilePainAnchoredHour(now: Date())
+                Task {
+                    await refreshHourlyReminderUIState()
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                Task {
+                    await refreshHourlyReminderUIState()
+                }
             }
             .onReceive(
                 Timer.publish(every: 55, tolerance: 5, on: .main, in: .common).autoconnect()
@@ -301,7 +439,7 @@ struct iOSContentView: View {
     private var hairlineDividerWidth: CGFloat { 0.5 }
 
     private func handsMinutesRow() -> some View {
-        let minuteMarks = Array(stride(from: 10, through: 60, by: 10))
+        let minuteMarks = Array(stride(from: 0, through: 60, by: 10))
 
         return VStack(alignment: .leading, spacing: 16) {
             Text("Hand usage")
@@ -337,31 +475,15 @@ struct iOSContentView: View {
     }
 
     private func handsMinuteMarksRow(markers: [Int]) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             ForEach(markers, id: \.self) { m in
-                Button {
-                    minutesHandsUsed = m
-                } label: {
-                    let selected = minutesHandsUsed == m
-                    ZStack {
-                        Circle()
-                            .fill(hourlyChipFill)
-                        Circle()
-                            .strokeBorder(
-                                Color(UIColor.separator).opacity(selected ? 0.22 : 0.38),
-                                lineWidth: hairlineDividerWidth
-                            )
-                        Text("\(m)")
-                            .font(.body.monospacedDigit().weight(.regular))
-                            .foregroundStyle(hourlyChipDigitColor)
-                            .minimumScaleFactor(0.55)
-                            .lineLimit(1)
-                            .padding(4)
-                    }
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.plain)
+                HandsMinutePresetChip(
+                    marker: m,
+                    minutes: $minutesHandsUsed,
+                    chipFill: hourlyChipFill,
+                    labelColor: hourlyChipDigitColor,
+                    hairlineWidth: hairlineDividerWidth
+                )
             }
         }
         .padding(.top, 2)
@@ -418,8 +540,51 @@ struct iOSContentView: View {
     private func eveningStopChipButton(_ choice: HourlyReminderManager.QuietStopChoice) -> some View {
         Button {
             quietStopRaw = choice.rawValue
+            Task {
+                await rescheduleActiveHourlyRemindersIfNeeded()
+            }
         } label: {
             Text(choice.pickerTitle)
+                .font(.footnote.weight(.medium))
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func reminderMorningStartChipTitle(hour24: Int) -> String {
+        switch hour24 {
+        case 8: return "8 AM"
+        case 9: return "9 AM"
+        case 10: return "10 AM"
+        case 11: return "11 AM"
+        default: return "\(hour24) AM"
+        }
+    }
+
+    @ViewBuilder
+    private func reminderMorningStartChip(_ hour24: Int) -> some View {
+        let selected = hour24 == effectiveMorningStartHour
+
+        Group {
+            if selected {
+                reminderMorningStartChipButton(hour24)
+                    .buttonStyle(BorderedProminentButtonStyle())
+            } else {
+                reminderMorningStartChipButton(hour24)
+                    .buttonStyle(BorderedButtonStyle())
+            }
+        }
+    }
+
+    private func reminderMorningStartChipButton(_ hour24: Int) -> some View {
+        Button {
+            reminderMorningStartHourRaw = hour24
+            Task {
+                await rescheduleActiveHourlyRemindersIfNeeded()
+            }
+        } label: {
+            Text(reminderMorningStartChipTitle(hour24: hour24))
                 .font(.footnote.weight(.medium))
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
@@ -437,19 +602,132 @@ struct iOSContentView: View {
         minutesHandsUsed = 0
         journalEntry = ""
         statusMessage = "Saved (\(Date().displayTime))"
+
+        let host = macSyncHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty, !isSyncing else { return }
+        Task { await syncPendingLogs() }
+    }
+
+    private var emptyTodayLogsBanner: String {
+        store.hourlyLogs.isEmpty
+            ? "No logs yet"
+            : "No logs since 3:00 AM — your hand day resets at 3:00 AM."
+    }
+
+    private func rescheduleActiveHourlyRemindersIfNeeded() async {
+        let wantsHourly = await MainActor.run { hourlyReminderDesired }
+        guard wantsHourly else { return }
+        let quietRaw = await MainActor.run { quietStopRaw }
+        let wakeSnapshot = await MainActor.run { HourlyReminderManager.clampedMorningStartHour(reminderMorningStartHourRaw) }
+        let choice = HourlyReminderManager.QuietStopChoice(rawValue: quietRaw)
+            ?? HourlyReminderManager.QuietStopChoice.elevenPM
+
+        do {
+            try await HourlyReminderManager.rescheduleAllHourlySlots(
+                quietChoice: choice,
+                wakeHour: wakeSnapshot
+            )
+        } catch {}
+
+        await refreshHourlyReminderUIState()
+    }
+
+    private func refreshHourlyReminderUIState() async {
+        await migrateLegacyHourlyReminderPreferenceIfNeeded()
+        await HourlyReminderManager.cancelLegacyDiagnosticNotifications()
+
+        let (wantsNotifications, quietRawSnapshot, wakeRawSnapshot) = await MainActor.run {
+            (hourlyReminderDesired, quietStopRaw, reminderMorningStartHourRaw)
+        }
+        let wakeHour = HourlyReminderManager.clampedMorningStartHour(wakeRawSnapshot)
+        let choice = HourlyReminderManager.QuietStopChoice(rawValue: quietRawSnapshot)
+            ?? HourlyReminderManager.QuietStopChoice.elevenPM
+
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let authSnapshot = settings.authorizationStatus
+
+        do {
+            if wantsNotifications {
+                try await HourlyReminderManager.replenishRollingIfDesired(
+                    quietChoice: choice,
+                    wakeHour: wakeHour,
+                    userWantsNotifications: wantsNotifications
+                )
+            }
+        } catch {}
+
+        let nextLabel: String?
+        if wantsNotifications, authSnapshot != .denied {
+            let nextDate = await HourlyReminderManager.nextScheduledCanonicalReminderDate()
+            nextLabel = nextDate.map { Self.nextReminderSubtitle(for: $0) }
+        } else {
+            nextLabel = nil
+        }
+
+        await MainActor.run {
+            notificationAuthorizationStatus = authSnapshot
+            nextReminderDisplayTime = nextLabel
+        }
+    }
+
+    private func migrateLegacyHourlyReminderPreferenceIfNeeded() async {
+        guard UserDefaults.standard.object(forKey: Self.hourlyReminderDesiredAppStorageKey) == nil else { return }
+        guard await HourlyReminderManager.hasScheduledHourlyReminders() else { return }
+        await MainActor.run {
+            hourlyReminderDesired = true
+        }
+    }
+
+    private func disableHourlyReminders() async {
+        isTogglingHourlyReminder = true
+        defer { isTogglingHourlyReminder = false }
+
+        await MainActor.run {
+            hourlyReminderDesired = false
+        }
+
+        await HourlyReminderManager.cancelAllScheduled()
+        await refreshHourlyReminderUIState()
+        await MainActor.run {
+            statusMessage = "Hourly reminders off"
+        }
     }
 
     private func enableReminder() async {
+        isTogglingHourlyReminder = true
+        defer { isTogglingHourlyReminder = false }
+
+        let wakeSnapshot = await MainActor.run { HourlyReminderManager.clampedMorningStartHour(reminderMorningStartHourRaw) }
+
         do {
             let choice = HourlyReminderManager.QuietStopChoice(rawValue: quietStopRaw)
                 ?? HourlyReminderManager.QuietStopChoice.elevenPM
-            try await HourlyReminderManager.requestPermissionAndSchedule(
+            let scheduled = try await HourlyReminderManager.requestPermissionAndSchedule(
                 quietChoice: choice,
-                wakeHour: HourlyReminderManager.morningResumeHour
+                wakeHour: wakeSnapshot
             )
-            statusMessage = "Reminder on"
+            await MainActor.run {
+                if scheduled {
+                    hourlyReminderDesired = true
+                }
+            }
         } catch {
-            statusMessage = "Reminder failed: \(error.localizedDescription)"
+            await MainActor.run {
+                statusMessage = "Reminder failed: \(error.localizedDescription)"
+            }
+            await refreshHourlyReminderUIState()
+            return
+        }
+
+        await refreshHourlyReminderUIState()
+        await MainActor.run {
+            if hourlyReminderDesired {
+                statusMessage = "Hourly reminders on"
+            } else if notificationAuthorizationStatus == .denied {
+                statusMessage = "Notifications blocked — allow HandTrack in Settings, then tap Enable"
+            } else {
+                statusMessage = "Couldn’t schedule hourly reminders"
+            }
         }
     }
 
@@ -468,7 +746,68 @@ struct iOSContentView: View {
     }
 }
 
+/// Hand-day scoped hourly log row (six-line journal preview; See more / See less).
+private struct TodaysJournalLogRow: View {
+    let log: HourlyHandLog
+    @Binding var expandedJournalLogIDs: Set<UUID>
+    let previewLineLimit: Int
+
+    private var expanded: Bool { expandedJournalLogIDs.contains(log.id) }
+
+    private var journalTrimmed: String {
+        log.journalEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var journalMaybeOverflows: Bool {
+        guard !journalTrimmed.isEmpty else { return false }
+        let explicitLines = journalTrimmed.split(whereSeparator: \.isNewline).count
+        return journalTrimmed.count > 260 || explicitLines > previewLineLimit
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(log.createdAt.displayTime) · \(log.hourStart.displayHourBucket)")
+                .font(.headline)
+            Text(
+                "\(log.handTrackPainLeftRightLogPhrase) · \(log.minutesHandsUsed) min · \(log.syncStatus.rawValue)"
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+
+            if !journalTrimmed.isEmpty {
+                Text(log.journalEntry)
+                    .font(.body)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(expanded ? nil : previewLineLimit)
+
+                if journalMaybeOverflows {
+                    Button {
+                        var ids = expandedJournalLogIDs
+                        if expanded {
+                            ids.remove(log.id)
+                        } else {
+                            ids.insert(log.id)
+                        }
+                        expandedJournalLogIDs = ids
+                    } label: {
+                        Text(expanded ? "See less" : "See more")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(UIColor.systemBlue))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Pain digit circles (half-step feedback)
+
+/// Shared “brief hold” duration for pain half‑steps and hand‑usage +5 minute presets.
+private enum BriefHoldGestureTiming {
+    static let seconds: Double = 0.2
+}
 
 private enum PainHalfStepFeedback {
     private static let impact = UIImpactFeedbackGenerator(style: .medium)
@@ -479,10 +818,81 @@ private enum PainHalfStepFeedback {
     }
 }
 
-private struct PainDigitCircle: View {
-    /// 20% of a second — snappy half-step gesture.
-    private static let halfStepLongPressSeconds: Double = 0.2
+/// Preset minute ring (0 … 60 in tens): tap sets marker, brief hold sets `marker + 5` (capped at 60).
+private struct HandsMinutePresetChip: View {
+    let marker: Int
+    @Binding var minutes: Int
+    let chipFill: Color
+    let labelColor: Color
+    let hairlineWidth: CGFloat
 
+    @State private var pulseScale: CGFloat = 1
+    private let emphasisScale: CGFloat = 1.12
+
+    private var bonusMinutes: Int { min(60, marker + 5) }
+
+    private var selected: Bool {
+        minutes == marker || minutes == marker + 5
+    }
+
+    var body: some View {
+        Text("\(marker)")
+            .font(.body.monospacedDigit().weight(.regular))
+            .foregroundStyle(labelColor)
+            .minimumScaleFactor(0.55)
+            .lineLimit(1)
+            .padding(4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                ZStack {
+                    Circle()
+                        .fill(chipFill)
+                    Circle()
+                        .strokeBorder(
+                            Color(UIColor.separator).opacity(selected ? 0.22 : 0.38),
+                            lineWidth: hairlineWidth
+                        )
+                }
+            )
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .clipShape(Circle())
+            .scaleEffect(pulseScale)
+            .contentShape(Circle())
+            .highPriorityGesture(bonusGesture)
+            .onTapGesture {
+                minutes = marker
+            }
+            .accessibilityLabel("\(marker) minutes preset")
+            .accessibilityHint(accessibilityHintBody)
+    }
+
+    private var accessibilityHintBody: String {
+        if bonusMinutes != marker {
+            return "Tap for \(marker) minutes, or hold \(String(format: "%.1f", BriefHoldGestureTiming.seconds)) seconds for \(bonusMinutes) minutes."
+        }
+        return "Tap for \(marker) minutes. Holding here also keeps \(marker) minutes (already at cap)."
+    }
+
+    private var bonusGesture: some Gesture {
+        LongPressGesture(minimumDuration: BriefHoldGestureTiming.seconds, maximumDistance: 24)
+            .onEnded { _ in
+                PainHalfStepFeedback.pulse()
+                minutes = bonusMinutes
+                withAnimation(.spring(response: 0.26, dampingFraction: 0.52)) {
+                    pulseScale = emphasisScale
+                }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 130_000_000)
+                    withAnimation(.spring(response: 0.46, dampingFraction: 0.78)) {
+                        pulseScale = 1
+                    }
+                }
+            }
+    }
+}
+
+private struct PainDigitCircle: View {
     let digit: Int
     @Binding var value: Double
     let unselectedChipFill: Color
@@ -518,7 +928,7 @@ private struct PainDigitCircle: View {
             }
             .accessibilityLabel(Self.accessibilityTitle(displayTitle: title, value: value, digit: digit))
             .accessibilityHint(
-                "Tap for whole step, or hold \(String(format: "%.1f", Self.halfStepLongPressSeconds)) seconds for half step."
+                "Tap for whole step, or hold \(String(format: "%.1f", BriefHoldGestureTiming.seconds)) seconds for half step."
             )
     }
 
@@ -537,7 +947,7 @@ private struct PainDigitCircle: View {
     }
 
     private var halfStepGesture: some Gesture {
-        LongPressGesture(minimumDuration: Self.halfStepLongPressSeconds, maximumDistance: 24)
+        LongPressGesture(minimumDuration: BriefHoldGestureTiming.seconds, maximumDistance: 24)
             .onEnded { _ in
                 PainHalfStepFeedback.pulse()
                 value = Double(digit) + 0.5

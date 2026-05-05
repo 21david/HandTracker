@@ -65,15 +65,81 @@ final class HandTrackSyncServer: ObservableObject {
 
     private func handle(_ connection: NWConnection) {
         connection.start(queue: .main)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 655_536) { [weak self] data, _, _, _ in
+        receiveCompleteRequest(on: connection, accumulated: Data())
+    }
+
+    /// Reads until headers + optional body are fully buffered. A single TCP `receive` is not enough —
+    /// the POST body commonly arrives after the headers, otherwise JSON decode fails and we return 400;
+    /// incomplete headers yield 404, and the iOS client reports `URLError(.badServerResponse)` (-1011).
+    private func receiveCompleteRequest(on connection: NWConnection, accumulated: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 655_536) { [weak self] chunk, _, isComplete, error in
             Task { @MainActor in
                 guard let self else { return }
-                let response = self.response(for: data ?? Data())
+                if error != nil {
+                    connection.cancel()
+                    return
+                }
+                var buf = accumulated
+                if let chunk, !chunk.isEmpty { buf.append(chunk) }
+
+                if buf.count > 8 * 1024 * 1024 {
+                    connection.cancel()
+                    return
+                }
+
+                guard let requestData = Self.extractCompleteHTTPRequest(buf, streamComplete: isComplete) else {
+                    if isComplete {
+                        connection.cancel()
+                    } else {
+                        self.receiveCompleteRequest(on: connection, accumulated: buf)
+                    }
+                    return
+                }
+
+                let response = self.response(for: requestData)
                 connection.send(content: response, completion: .contentProcessed { _ in
                     connection.cancel()
                 })
             }
         }
+    }
+
+    private static let headerBodySeparator = Data("\r\n\r\n".utf8)
+
+    private static func extractCompleteHTTPRequest(_ data: Data, streamComplete: Bool) -> Data? {
+        guard let sepRange = data.range(of: headerBodySeparator) else { return nil }
+        let headersData = data.subdata(in: data.startIndex ..< sepRange.lowerBound)
+        guard let headers = String(data: headersData, encoding: .utf8) else { return nil }
+        let bodyStart = sepRange.upperBound
+
+        let firstLine = headers.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
+        let isPOST = firstLine.uppercased().hasPrefix("POST ")
+
+        if let contentLength = parseContentLength(headers) {
+            guard data.count >= bodyStart + contentLength else { return nil }
+            return data.prefix(bodyStart + contentLength)
+        }
+
+        if isPOST, streamComplete {
+            return Data(data[bodyStart...])
+        }
+
+        if isPOST {
+            return nil
+        }
+
+        return Data(data[..<bodyStart])
+    }
+
+    private static func parseContentLength(_ headers: String) -> Int? {
+        for line in headers.split(separator: "\r\n", omittingEmptySubsequences: false) {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard name.lowercased() == "content-length" else { continue }
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            return Int(value)
+        }
+        return nil
     }
 
     private func response(for requestData: Data) -> Data {
@@ -97,12 +163,12 @@ final class HandTrackSyncServer: ObservableObject {
 
         do {
             let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
+            decoder.dateDecodingStrategy = .millisecondsSince1970
             let logs = try decoder.decode([HourlyHandLog].self, from: bodyData)
             let acceptedIDs = store.importHourlyLogs(logs)
 
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
+            encoder.dateEncodingStrategy = .millisecondsSince1970
             let responseData = try encoder.encode(SyncResponse(acceptedIDs: acceptedIDs))
             return httpResponse(status: "200 OK", body: responseData)
         } catch {

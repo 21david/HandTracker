@@ -643,7 +643,7 @@ private enum TwelveDaySyntheticSeries {
     static func randomizedTestPreview(referenceDate: Date, seed: UInt64)
         -> ([ComputerUsageDaySlot], [TwelveDayPainCurve: [Double?]]) {
         let calendar = Calendar.current
-        let anchor = referenceDate.startOfCalendarDay
+        let anchor = referenceDate.startOfHandTrackingDay
         let count = 12
         var rng = TwelveDayRNG(seed: seed)
         let columnTiers = syntheticUsageTierColumnOrder(count: count, rng: &rng)
@@ -1358,7 +1358,7 @@ struct MacTwelveDayStackedUsagePainChart: View {
     @AppStorage(TwelveDayUsageBarsAppStorage.showTravelKey) private var twelveDayChartShowTravel = true
 
     /// Seeded deterministic sample charts (not persisted); flipping **Test data** bumps the seed once.
-    @State private var useTwelveDayTestData = true
+    @State private var useTwelveDayTestData = false
     @State private var twelveDayTestDataSeed: UInt64 = 0x6D61635F3132DD17
 
     /// Default: **left‑hand** pain series only (`Max`/`Avg`/morning); enable right‑hand boxes as needed.

@@ -37,9 +37,11 @@ struct MacKeystrokeFiveMinuteChart: View {
             xAxisMarks(boundaries: boundaries, slots: slots)
         }
         .chartYAxis {
-            AxisMarks(position: .leading)
+            MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral()
         }
-        .chartYAxisLabel("Keystrokes", position: .leading)
+        .chartYAxisLabel(position: .leading) {
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Keystrokes")
+        }
         .frame(height: 200)
         .padding(.top, 20)
     }

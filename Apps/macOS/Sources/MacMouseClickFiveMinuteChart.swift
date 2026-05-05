@@ -35,9 +35,11 @@ struct MacMouseClickFiveMinuteChart: View {
             xAxisMarks(boundaries: boundaries, slots: slots)
         }
         .chartYAxis {
-            AxisMarks(position: .leading)
+            MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral()
         }
-        .chartYAxisLabel("Mouse clicks", position: .leading)
+        .chartYAxisLabel(position: .leading) {
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Mouse clicks")
+        }
         .frame(height: 200)
         .padding(.top, 20)
     }

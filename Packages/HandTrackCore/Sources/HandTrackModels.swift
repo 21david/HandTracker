@@ -63,9 +63,14 @@ extension HourlyHandLog: Codable {
             return legacyFallback
         }
 
-        let legacyDouble = try c.decodeIfPresent(Double.self, forKey: .painLevel)
-        let legacyInt = try c.decodeIfPresent(Int.self, forKey: .painLevel)
-        let legacyResolved = legacyDouble ?? Double(legacyInt ?? 1)
+        let legacyResolved: Double
+        if let d = try c.decodeIfPresent(Double.self, forKey: .painLevel) {
+            legacyResolved = d
+        } else if let i = try c.decodeIfPresent(Int.self, forKey: .painLevel) {
+            legacyResolved = Double(i)
+        } else {
+            legacyResolved = 1
+        }
 
         painLevelLeft = try decodeSide(.painLevelLeft, legacyFallback: legacyResolved)
         painLevelRight = try decodeSide(.painLevelRight, legacyFallback: legacyResolved)
@@ -89,6 +94,13 @@ extension HourlyHandLog: Codable {
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
         try c.encode(syncStatus, forKey: .syncStatus)
+    }
+}
+
+extension HourlyHandLog {
+    /// Readable pain summary for log rows (“left 0.5, right 3”; halves shown as decimals).
+    var handTrackPainLeftRightLogPhrase: String {
+        "left \(painLevelLeft.handTrackPainLoggedNumber), right \(painLevelRight.handTrackPainLoggedNumber)"
     }
 }
 
@@ -150,6 +162,40 @@ struct MouseTravelFiveMinuteSlot: Identifiable, Hashable {
     }
 }
 
+/// Twelve trailing calendar hours of Mac‑recorded aggregates (minute buckets summed per hour).
+struct ComputerUsageHourSlot: Identifiable, Hashable {
+    var hourStart: Date
+    var keystrokeCount: Int
+    var mouseClickCount: Int
+    var travelPixels: Double
+
+    var id: Date { hourStart }
+}
+
+/// One **hand-tracking day** of Mac-recorded aggregates: minute buckets from **local 3:00 AM → next 3:00 AM**
+/// (aligned with ``Date/startOfHandTrackingDay`` — same boundary as iPhone “logical today”).
+struct ComputerUsageDaySlot: Identifiable, Hashable {
+    var dayStart: Date
+    var keystrokeCount: Int
+    var mouseClickCount: Int
+    var travelPixels: Double
+
+    var id: Date { dayStart }
+}
+
+/// Denormalized rollup of iPhone hourly pain buckets by **hand-tracking day** (3 AM rollover) on the Mac. ``painPlotValue`` retains the legacy “means of hourly averages, then max(L,R)” statistic; twelve‑day lines use worst / average‑of‑logged‑instant snapshot fields.
+struct DailyPainRollup: Identifiable, Hashable, Codable {
+    var dayStart: Date
+    var meanOfHourlyAverageLeft: Double
+    var meanOfHourlyAverageRight: Double
+    var painPlotValue: Double
+    var worstHigherHandPain: Double
+    var averageHigherHandPainPerLog: Double
+    var hoursWithLogs: Int
+
+    var id: Date { dayStart }
+}
+
 struct SyncResponse: Codable {
     var acceptedIDs: [UUID]
 }
@@ -158,24 +204,48 @@ extension Double {
     /// Unicode vulgar fraction one half (preferred over `"0.5"` in HandTrack UI).
     static let handTrackPainHalfGlyph = "\u{00BD}"
 
-    /// Pain logged in ½ steps for 0 … 5.5 — compact string for chips and summaries (`"3"`, `"3½"`; `"½"` alone for zero + half).
+    /// Pain logged in ½ steps for 0 … 5.5 — compact chips (`"3"`, `"3.5"`, `"0.5"`).
     var handTrackPainCompactLabel: String {
         let snapped = (self * 2).rounded() / 2
         let whole = snapped.rounded(.towardZero)
         if abs(snapped - whole) < 0.001 {
-            return "\(Int(whole))"
+            return String(format: "%.0f", snapped)
         }
-        let intPart = Int(whole)
-        if intPart == 0 {
-            return Self.handTrackPainHalfGlyph
+        return String(format: "%.1f", snapped)
+    }
+
+    /// Half-step-snapped numeric string for synced log rows (`"3"`, `"0.5"`).
+    var handTrackPainLoggedNumber: String {
+        let snapped = (self * 2).rounded() / 2
+        let frac = snapped - snapped.rounded(.towardZero)
+        if abs(frac) < 0.001 {
+            return String(format: "%.0f", snapped)
         }
-        return "\(intPart)\(Self.handTrackPainHalfGlyph)"
+        return String(format: "%.1f", snapped)
     }
 }
 
 extension Date {
     var startOfHour: Date {
         Calendar.current.dateInterval(of: .hour, for: self)?.start ?? self
+    }
+
+    var startOfCalendarDay: Date {
+        Calendar.current.startOfDay(for: self)
+    }
+
+    /// Local “hand day” rolls at **3:00 AM** — timestamps before then belong to the window that began yesterday at 3 AM.
+    /// Matches iPhone hourly UI’s notion of logical today.
+    var startOfHandTrackingDay: Date {
+        let calendar = Calendar.current
+        let calStart = calendar.startOfDay(for: self)
+        guard let threeAMToday = calendar.date(byAdding: .hour, value: 3, to: calStart) else {
+            return self
+        }
+        if self >= threeAMToday {
+            return threeAMToday
+        }
+        return calendar.date(byAdding: .day, value: -1, to: threeAMToday) ?? threeAMToday
     }
 
     var startOfMinute: Date {

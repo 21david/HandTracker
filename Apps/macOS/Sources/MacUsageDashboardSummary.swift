@@ -1,81 +1,150 @@
 import SwiftUI
 
-// MARK: - Hours math (Past 12 h “Average minute” calibration)
+// MARK: - Same stack-height geometry as charts (minutes / hours derived from composite plot Y)
 
-/// Interprets Mac-recorded aggregates as **reference posture hours**, matching the keystrokes‑/min, clicks‑/min,
-/// and thousand‑px‑/min sliders on the Past 12 hours chart.
-enum MacComfortCalibrationWorkload {
+/// Mirrors [`MacTwelveHourStackedUsagePainChart`](MacTwelveHourStackedUsagePainChart.swift) `HourComfortCaps` + `buildStackLayers` totals.
+private enum MacDashboardTwelveHourMath {
+    static let chartYAxisMax = 10.0
+    static let usageBandThird = chartYAxisMax / 3.0
+    static let leadingMinutesPerPlotYUnit = 6.0
 
-    struct Breakdown {
-        var keysHours: Double
-        var clicksHours: Double
-        var pointerHours: Double
-        /// Typing/mousing/movement overlap; headline uses **max** channel as a readable single number.
-        var approximateComputerHoursMaxChannel: Double
+    struct ComfortCaps {
+        let keysHeightDenom: Double
+        let clicksHeightDenom: Double
+        let travelHeightDenom: Double
+
+        static func fromModerateMinuteAverages(
+            keysPerMinute: Int,
+            clicksPerMinute: Int,
+            pixelThousandsPerMinute: Int
+        ) -> ComfortCaps {
+            let rawKeys = max(0, keysPerMinute)
+            let kpm = Double((rawKeys / 5) * 5)
+            let cpm = Double(max(0, clicksPerMinute))
+            let thousands = max(1, pixelThousandsPerMinute)
+            let ppm = Double(thousands) * 1000
+
+            func heightDenom(_ rate: Double) -> Double {
+                guard rate.isFinite else { return .infinity }
+                return rate > 1e-9 ? rate * 120 : .infinity
+            }
+
+            return ComfortCaps(
+                keysHeightDenom: heightDenom(kpm),
+                clicksHeightDenom: heightDenom(cpm),
+                travelHeightDenom: heightDenom(ppm)
+            )
+        }
     }
 
-    private static func normalizedKeysPerMinute(_ raw: Int) -> Double {
-        Double((max(0, raw) / 5) * 5)
-    }
-
-    static func workloadHours(
+    /// Total stacked **`chart Y`** height for one bucket (travel → clicks → keys), after squeeze toward `0…10`.
+    static func compositeStackPlotY(
         keystrokes: Int,
-        clicks: Int,
+        mouseClicks: Int,
         travelPixels: Double,
-        keysPerMinuteRaw: Int,
-        clicksPerMinuteRaw: Int,
-        pixelThousandsPerMinuteRaw: Int
-    ) -> Breakdown {
-        let kpm = normalizedKeysPerMinute(keysPerMinuteRaw)
-        let cpm = Double(max(0, clicksPerMinuteRaw))
-        let ppm = Double(max(1, pixelThousandsPerMinuteRaw)) * 1000
+        caps: ComfortCaps
+    ) -> Double {
+        let band = usageBandThird
+        let fracKeys = caps.keysHeightDenom.isFinite && caps.keysHeightDenom > 1e-9
+            ? max(0, Double(keystrokes) / caps.keysHeightDenom) : 0
+        let fracClicks = caps.clicksHeightDenom.isFinite && caps.clicksHeightDenom > 1e-9
+            ? max(0, Double(mouseClicks) / caps.clicksHeightDenom) : 0
+        let fracTravel = caps.travelHeightDenom.isFinite && caps.travelHeightDenom > 1e-9
+            ? max(0, travelPixels / caps.travelHeightDenom) : 0
 
-        let hKeys = kpm > 1e-9 ? Double(keystrokes) / (kpm * 60) : 0
-        let hClicks = cpm > 1e-9 ? Double(clicks) / (cpm * 60) : 0
-        let hPointer = ppm > 1e-9 ? travelPixels / (ppm * 60) : 0
-
-        return Breakdown(
-            keysHours: hKeys,
-            clicksHours: hClicks,
-            pointerHours: hPointer,
-            approximateComputerHoursMaxChannel: max(hKeys, max(hClicks, hPointer))
-        )
+        let baseKeys = band * fracKeys
+        let baseClicks = band * fracClicks
+        let baseTravel = band * fracTravel
+        let sumBase = baseKeys + baseClicks + baseTravel
+        guard sumBase > 1e-6 else { return 0 }
+        let squeeze = sumBase <= chartYAxisMax ? 1.0 : chartYAxisMax / sumBase
+        return sumBase * squeeze
     }
 
-    static func formatHoursHours(_ hours: Double) -> String {
-        guard hours.isFinite, hours >= 0 else { return "—" }
-        if hours >= 100 {
-            return String(format: "%.0f h", hours)
-        }
-        if hours >= 10 {
-            return String(format: "%.1f h", hours)
-        }
-        return String(format: "%.2f h", hours)
-    }
-
-    static func formatHoursSubtitle(_ bd: Breakdown) -> String {
-        let kh = Self.formatHoursHours(bd.keysHours)
-        let ch = Self.formatHoursHours(bd.clicksHours)
-        let ph = Self.formatHoursHours(bd.pointerHours)
-        let mx = Self.formatHoursHours(bd.approximateComputerHoursMaxChannel)
-        return "Keys ≈ \(kh) · Clicks ≈ \(ch) · Pointer ≈ \(ph); max modality \(mx)"
+    static func approximateWorkloadMinutes(totalPlotY: Double) -> Double {
+        totalPlotY * leadingMinutesPerPlotYUnit
     }
 }
 
-private enum MacUsageSummaryFormatters {
+/// Mirrors [`TwelveDayCombinedChart`](MacTwelveDayStackedUsagePainChart.swift) + `buildDayStackLayers` totals.
+private enum MacDashboardTwelveDayMath {
 
-    static let compactMonthDayYear: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f
-    }()
+    private static let typicalWorkHours = 3.0
+    private static let scaleFactor = 12.0 * typicalWorkHours
+    private static let usageCapEase = 3.0 / 5.0
 
-    static func pixelSummary(_ pixels: Double) -> String {
+    private static let keystrokesDayCap = 275.0 * scaleFactor * usageCapEase
+    private static let clicksDayCap = 120.0 * scaleFactor * usageCapEase
+    private static let travelDayCap = 125_000.0 * scaleFactor * usageCapEase
+
+    private static let usageBandThird = 10.0 / 3.0
+    private static let chartYAxisMax = 10.0
+
+    struct DayBarsVisibility {
+        var showKeys: Bool
+        var showClicks: Bool
+        var showTravel: Bool
+    }
+
+    private static func dayCappedFraction(_ value: Double, cap: Double) -> Double {
+        guard cap > 0 else { return 0 }
+        return min(1, value / cap)
+    }
+
+    /// Total stacked **`chart Y`** for the current hand-tracking day bar (respects twelve‑day “Usage bars” toggles).
+    static func compositeStackPlotY(slot: ComputerUsageDaySlot, vis: DayBarsVisibility) -> Double {
+        guard vis.showKeys || vis.showClicks || vis.showTravel else { return 0 }
+
+        let bandSlice = usageBandThird
+        let keysFrac = dayCappedFraction(Double(slot.keystrokeCount), cap: keystrokesDayCap)
+        let clickFrac = dayCappedFraction(Double(slot.mouseClickCount), cap: clicksDayCap)
+        let travelFrac = dayCappedFraction(slot.travelPixels, cap: travelDayCap)
+
+        struct Stage {
+            var unscaled: Double
+        }
+        var stages: [Stage] = []
+        if vis.showTravel {
+            let h = travelFrac * bandSlice
+            if h > 1e-4 { stages.append(Stage(unscaled: h)) }
+        }
+        if vis.showClicks {
+            let h = clickFrac * bandSlice
+            if h > 1e-4 { stages.append(Stage(unscaled: h)) }
+        }
+        if vis.showKeys {
+            let h = keysFrac * bandSlice
+            if h > 1e-4 { stages.append(Stage(unscaled: h)) }
+        }
+        guard !stages.isEmpty else { return 0 }
+
+        let sumUnscaled = stages.reduce(0.0) { $0 + $1.unscaled }
+        guard sumUnscaled > 0 else { return 0 }
+        let squeeze = sumUnscaled <= chartYAxisMax ? 1.0 : chartYAxisMax / sumUnscaled
+        var yCursor = 0.0
+        for s in stages {
+            yCursor += s.unscaled * squeeze
+        }
+        return yCursor
+    }
+
+    /// Same ladder as **`twelveDayLeadingUsageHoursTickLabel`**: `chartY / 2` → hours (`0…10 Y ↔ 0…5 h`).
+    static func approximateWorkloadHours(totalPlotY: Double) -> Double {
+        totalPlotY / 2.0
+    }
+}
+
+private enum MacDashFormat {
+
+    static func integers(_ value: Int) -> String {
+        NumberFormatter.localizedString(from: NSNumber(value: value), number: .decimal)
+    }
+
+    static func travel(_ pixels: Double) -> String {
         guard pixels.isFinite else { return "—" }
         let p = pixels
         if p >= 1_000_000 {
-            return String(format: "%.2f M px", p / 1_000_000)
+            return String(format: "%.1f M px", p / 1_000_000)
         }
         if p >= 10_000 {
             return String(format: "%.0f k px", p / 1_000)
@@ -85,184 +154,119 @@ private enum MacUsageSummaryFormatters {
         }
         return String(format: "%.0f px", p)
     }
-}
 
-// MARK: - Dashboard panels
+    /// Chart-derived minutes ceiling; title already conveys “estimated”.
+    static func minutesWorkload(_ raw: Double) -> String {
+        guard raw.isFinite, raw >= 0 else { return "—" }
+        let ceiling = Int(ceil(max(0, raw) - 1e-12))
+        return englishMinuteCount(ceiling)
+    }
 
-private struct MetricBlock: View {
+    /// Converts fractional workload **hours** to whole hours + minutes (minutes from remainder, ceiling totals).
+    static func hoursWorkload(_ rawHours: Double) -> String {
+        guard rawHours.isFinite, rawHours >= 0 else { return "—" }
+        let totalMinutes = Int(ceil(max(0, rawHours) * 60.0 - 1e-12))
+        return englishHoursAndMinutes(totalMinutes)
+    }
 
-    enum Kind {
-        case hour
-        case day
-
-        var title: String {
-            switch self {
-            case .hour: return "This calendar hour"
-            case .day: return "Calendar day so far"
-            }
-        }
-
-        var subtitle: String {
-            switch self {
-            case .hour:
-                return "Counts since top of hour on the clocks below."
-            case .day:
-                return "Local midnight → midnight; pointer travel summed by minute buckets."
-            }
+    private static func englishMinuteCount(_ n: Int) -> String {
+        switch n {
+        case 0: return "0 minutes"
+        case 1: return "1 minute"
+        default: return "\(n) minutes"
         }
     }
 
-    let kind: Kind
-    let keystrokes: Int
-    let clicks: Int
-    let travelPx: Double
-    let bd: MacComfortCalibrationWorkload.Breakdown
-    let averageWPM: Double?
+    private static func englishHourWord(_ hours: Int) -> String {
+        switch hours {
+        case 1: return "1 hour"
+        default: return "\(hours) hours"
+        }
+    }
+
+    private static func englishHoursAndMinutes(_ totalMinutes: Int) -> String {
+        guard totalMinutes > 0 else { return englishMinuteCount(0) }
+        let h = totalMinutes / 60
+        let m = totalMinutes % 60
+        if h == 0 { return englishMinuteCount(m) }
+        if m == 0 { return englishHourWord(h) }
+        return "\(englishHourWord(h)) \(englishMinuteCount(m))"
+    }
+}
+
+// MARK: - Tiles
+
+private struct DashValueTile: View {
+    let title: String
+    let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(kind.title)
-                .font(.subheadline.weight(.semibold))
-            Text(kind.subtitle)
-                .font(.caption2)
+        VStack(alignment: .center, spacing: 6) {
+            Text(title)
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.76)
                 .fixedSize(horizontal: false, vertical: true)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(Self.intString(keystrokes)) keys · \(Self.intString(clicks)) clicks · \(MacUsageSummaryFormatters.pixelSummary(travelPx))")
-                    .font(.body.monospacedDigit())
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text("Approx. reference hours \(MacComfortCalibrationWorkload.formatHoursHours(bd.approximateComputerHoursMaxChannel)) (max modality)")
-                    .font(.footnote.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(MacComfortCalibrationWorkload.formatHoursSubtitle(bd))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let avg = averageWPM, kind == .hour {
-                Text("Average typing WPM \(String(format: "%.1f", avg)) · (keys ÷ 5 · min⁻¹)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(value)
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.62)
+                .lineLimit(2)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private static func intString(_ n: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 11)
+        .background(.quaternary.opacity(0.85), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
+/// Compact hour / today strips; workload chips match twelve‑hour (minutes ladder) & twelve‑day (hours ladder) charts.
 struct MacUsageDashboardSummary: View {
 
     private enum ComfortKeys {
-        static let keys = "HandTrack.mac.twelveHourAvgKeysPerMinute"
-        static let clicks = "HandTrack.mac.twelveHourAvgClicksPerMinute"
+        static let keysPM = "HandTrack.mac.twelveHourAvgKeysPerMinute"
+        static let clicksPM = "HandTrack.mac.twelveHourAvgClicksPerMinute"
         static let pxK = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
+        static let dayShowKeys = "HandTrack.mac.twelveDayChartShowKeys"
+        static let dayShowClicks = "HandTrack.mac.twelveDayChartShowClicks"
+        static let dayShowTravel = "HandTrack.mac.twelveDayChartShowPointerTravel"
     }
 
     @EnvironmentObject private var store: HandTrackStore
-    @AppStorage(ComfortKeys.keys) private var avgKeysPM = 15
-    @AppStorage(ComfortKeys.clicks) private var avgClicksPM = 5
+    @AppStorage(ComfortKeys.keysPM) private var avgKeysPM = 15
+    @AppStorage(ComfortKeys.clicksPM) private var avgClicksPM = 5
     @AppStorage(ComfortKeys.pxK) private var avgPixelThousandsPM = 7
+    @AppStorage(ComfortKeys.dayShowKeys) private var dayShowKeys = true
+    @AppStorage(ComfortKeys.dayShowClicks) private var dayShowClicks = true
+    @AppStorage(ComfortKeys.dayShowTravel) private var dayShowTravel = true
 
-    /// Tick from wrapping `TimelineView` so aggregates track the advancing clock minute/hour rolls.
     let now: Date
 
     @State private var showYesterday = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Estimated usage totals")
-                .font(.title3.weight(.semibold))
+        VStack(alignment: .leading, spacing: 13) {
 
-            HStack(alignment: .top, spacing: 16) {
-                MetricBlock(
-                    kind: .hour,
-                    keystrokes: store.keysSinceStartOfCurrentHour(reference: now),
-                    clicks: store.clicksSinceStartOfCurrentHour(reference: now),
-                    travelPx: store.mouseTravelPixelsSinceStartOfCurrentHour(reference: now),
-                    bd: MacComfortCalibrationWorkload.workloadHours(
-                        keystrokes: store.keysSinceStartOfCurrentHour(reference: now),
-                        clicks: store.clicksSinceStartOfCurrentHour(reference: now),
-                        travelPixels: store.mouseTravelPixelsSinceStartOfCurrentHour(reference: now),
-                        keysPerMinuteRaw: avgKeysPM,
-                        clicksPerMinuteRaw: avgClicksPM,
-                        pixelThousandsPerMinuteRaw: avgPixelThousandsPM
-                    ),
-                    averageWPM: store.averageWordsPerMinuteForCurrentHour(reference: now)
-                )
+            metricRowHeading("This hour")
+            hourRowOfTiles
 
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.35))
-                    .frame(width: 1)
+            metricRowHeading("Today")
+            todayRowOfTiles
 
-                MetricBlock(
-                    kind: .day,
-                    keystrokes: todayTotals?.keystrokeCount ?? 0,
-                    clicks: todayTotals?.mouseClickCount ?? 0,
-                    travelPx: todayTotals?.travelPixels ?? 0,
-                    bd: {
-                        guard let slot = todayTotals else {
-                            return MacComfortCalibrationWorkload.Breakdown(
-                                keysHours: 0,
-                                clicksHours: 0,
-                                pointerHours: 0,
-                                approximateComputerHoursMaxChannel: 0
-                            )
-                        }
-                        return MacComfortCalibrationWorkload.workloadHours(
-                            keystrokes: slot.keystrokeCount,
-                            clicks: slot.mouseClickCount,
-                            travelPixels: slot.travelPixels,
-                            keysPerMinuteRaw: avgKeysPM,
-                            clicksPerMinuteRaw: avgClicksPM,
-                            pixelThousandsPerMinuteRaw: avgPixelThousandsPM
-                        )
-                    }(),
-                    averageWPM: nil
-                )
+            Button {
+                showYesterday = true
+            } label: {
+                Text("Yesterday’s totals…")
+                    .font(.footnote.weight(.medium))
+                    .underline()
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    """
-                    Interpreted with Past 12 hours → Average minute keys / min, clicks / min, and thousand px / min (popover sliders).
-                    Hours are fractions of sustained reference pace per modality; overlaps in real typing/mousing aren’t modeled—‘max modality’ summarizes the busiest channel conservatively.
-                    """
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    showYesterday = true
-                } label: {
-                    Text("Yesterday’s totals…")
-                        .font(.footnote.weight(.semibold))
-                        .underline()
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut("y", modifiers: [.command, .shift])
-            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("y", modifiers: [.command, .shift])
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.quaternary.opacity(0.55))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-        )
+        .padding(.vertical, 4)
         .sheet(isPresented: $showYesterday) {
             MacYesterdayUsageTotalsSheet(reference: now)
                 .environmentObject(store)
@@ -270,78 +274,136 @@ struct MacUsageDashboardSummary: View {
         }
     }
 
+    private func metricRowHeading(_ s: String) -> some View {
+        Text(s)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+    }
+
+    private var twelveHourCaps: MacDashboardTwelveHourMath.ComfortCaps {
+        MacDashboardTwelveHourMath.ComfortCaps.fromModerateMinuteAverages(
+            keysPerMinute: avgKeysPM,
+            clicksPerMinute: avgClicksPM,
+            pixelThousandsPerMinute: avgPixelThousandsPM
+        )
+    }
+
+    private var dayVisibility: MacDashboardTwelveDayMath.DayBarsVisibility {
+        MacDashboardTwelveDayMath.DayBarsVisibility(
+            showKeys: dayShowKeys,
+            showClicks: dayShowClicks,
+            showTravel: dayShowTravel
+        )
+    }
+
+    private var hourKeys: Int { store.keysSinceStartOfCurrentHour(reference: now) }
+    private var hourClicks: Int { store.clicksSinceStartOfCurrentHour(reference: now) }
+    private var hourTravel: Double { store.mouseTravelPixelsSinceStartOfCurrentHour(reference: now) }
+
+    private var hourPlotY: Double {
+        MacDashboardTwelveHourMath.compositeStackPlotY(
+            keystrokes: hourKeys,
+            mouseClicks: hourClicks,
+            travelPixels: hourTravel,
+            caps: twelveHourCaps
+        )
+    }
+
+    private var hourWorkloadMinutes: Double {
+        MacDashboardTwelveHourMath.approximateWorkloadMinutes(totalPlotY: hourPlotY)
+    }
+
+    private var hourRowOfTiles: some View {
+        HStack(spacing: 16) {
+            DashValueTile(title: "Keys", value: MacDashFormat.integers(hourKeys))
+            DashValueTile(title: "Clicks", value: MacDashFormat.integers(hourClicks))
+            DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(hourTravel))
+            DashValueTile(title: "Estimated minutes", value: MacDashFormat.minutesWorkload(hourWorkloadMinutes))
+        }
+    }
+
     private var todayTotals: ComputerUsageDaySlot? {
         store.computerUsageOnCalendarDayContaining(reference: now)
+    }
+
+    private var todayKeys: Int { todayTotals?.keystrokeCount ?? 0 }
+    private var todayClicks: Int { todayTotals?.mouseClickCount ?? 0 }
+    private var todayTravel: Double { todayTotals?.travelPixels ?? 0 }
+
+    private var todayPlotY: Double {
+        guard let slot = todayTotals else { return 0 }
+        return MacDashboardTwelveDayMath.compositeStackPlotY(slot: slot, vis: dayVisibility)
+    }
+
+    private var todayWorkloadHours: Double {
+        MacDashboardTwelveDayMath.approximateWorkloadHours(totalPlotY: todayPlotY)
+    }
+
+    private var todayRowOfTiles: some View {
+        HStack(spacing: 16) {
+            DashValueTile(title: "Keys", value: MacDashFormat.integers(todayKeys))
+            DashValueTile(title: "Clicks", value: MacDashFormat.integers(todayClicks))
+            DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(todayTravel))
+            DashValueTile(title: "Estimated time", value: MacDashFormat.hoursWorkload(todayWorkloadHours))
+        }
     }
 }
 
 private struct MacYesterdayUsageTotalsSheet: View {
 
     private enum ComfortKeys {
-        static let keys = "HandTrack.mac.twelveHourAvgKeysPerMinute"
-        static let clicks = "HandTrack.mac.twelveHourAvgClicksPerMinute"
+        static let keysPM = "HandTrack.mac.twelveHourAvgKeysPerMinute"
+        static let clicksPM = "HandTrack.mac.twelveHourAvgClicksPerMinute"
         static let pxK = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
+        static let dayShowKeys = "HandTrack.mac.twelveDayChartShowKeys"
+        static let dayShowClicks = "HandTrack.mac.twelveDayChartShowClicks"
+        static let dayShowTravel = "HandTrack.mac.twelveDayChartShowPointerTravel"
     }
 
     @EnvironmentObject private var store: HandTrackStore
     @Environment(\.dismiss) private var dismiss
-
-    @AppStorage(ComfortKeys.keys) private var avgKeysPM = 15
-    @AppStorage(ComfortKeys.clicks) private var avgClicksPM = 5
-    @AppStorage(ComfortKeys.pxK) private var avgPixelThousandsPM = 7
+    @AppStorage(ComfortKeys.dayShowKeys) private var dayShowKeys = true
+    @AppStorage(ComfortKeys.dayShowClicks) private var dayShowClicks = true
+    @AppStorage(ComfortKeys.dayShowTravel) private var dayShowTravel = true
 
     let reference: Date
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let yesterday = yesterdaySlot {
-                        Text(MacUsageSummaryFormatters.compactMonthDayYear.string(from: yesterday.dayStart))
-                            .font(.title2.weight(.semibold))
+            Group {
+                if let day = yesterdaySlot {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(DateFormatter.localizedString(
+                                from: day.dayStart,
+                                dateStyle: .medium,
+                                timeStyle: .none
+                            ))
+                                .font(.title2.weight(.semibold))
 
-                        Text(Self.intGrouped(yesterday.keystrokeCount) + " keys · " + Self.intGrouped(yesterday.mouseClickCount)
-                            + " clicks · " + MacUsageSummaryFormatters.pixelSummary(yesterday.travelPixels))
-                            .font(.body.monospacedDigit())
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        let bd = MacComfortCalibrationWorkload.workloadHours(
-                            keystrokes: yesterday.keystrokeCount,
-                            clicks: yesterday.mouseClickCount,
-                            travelPixels: yesterday.travelPixels,
-                            keysPerMinuteRaw: avgKeysPM,
-                            clicksPerMinuteRaw: avgClicksPM,
-                            pixelThousandsPerMinuteRaw: avgPixelThousandsPM
-                        )
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Approx. reference computer hours \(MacComfortCalibrationWorkload.formatHoursHours(bd.approximateComputerHoursMaxChannel)) (max modality)")
-                                .font(.headline.weight(.semibold))
-
-                            Text(MacComfortCalibrationWorkload.formatHoursSubtitle(bd))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 12) {
+                                DashValueTile(title: "Keys", value: MacDashFormat.integers(day.keystrokeCount))
+                                DashValueTile(title: "Clicks", value: MacDashFormat.integers(day.mouseClickCount))
+                            }
+                            HStack(spacing: 12) {
+                                DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(day.travelPixels))
+                                DashValueTile(
+                                    title: "Estimated time",
+                                    value: MacDashFormat.hoursWorkload(yesterdayHours(day))
+                                )
+                            }
                         }
-
-                        Divider()
-
-                        Text("Same interpretation as dashboard “Estimated usage totals”: each channel divides Mac-recorded aggregates by calibrated **steady** keys / min, clicks / min, and thousand px / minute from the slider popover beside Past 12 hours.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        ContentUnavailableView(
-                            "No yesterday rollup",
-                            systemImage: "calendar.badge.exclamationmark",
-                            description: Text("Recorded minute buckets weren’t consolidated for the prior calendar day yet.")
-                        )
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(minWidth: 420, idealWidth: 480, maxWidth: 520, minHeight: 280)
+                } else {
+                    Text("Nothing recorded for that day yet.")
+                        .foregroundStyle(.secondary)
+                        .padding(26)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(20)
-                .frame(maxWidth: 520, alignment: .leading)
             }
-            .frame(minWidth: 420, idealWidth: 480, maxWidth: 560, minHeight: 320)
             .navigationTitle("Yesterday")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -355,9 +417,16 @@ private struct MacYesterdayUsageTotalsSheet: View {
         store.computerUsageOnPreviousCalendarDay(reference: reference)
     }
 
-    private static func intGrouped(_ n: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+    private var dayVisibility: MacDashboardTwelveDayMath.DayBarsVisibility {
+        MacDashboardTwelveDayMath.DayBarsVisibility(
+            showKeys: dayShowKeys,
+            showClicks: dayShowClicks,
+            showTravel: dayShowTravel
+        )
+    }
+
+    private func yesterdayHours(_ slot: ComputerUsageDaySlot) -> Double {
+        let y = MacDashboardTwelveDayMath.compositeStackPlotY(slot: slot, vis: dayVisibility)
+        return MacDashboardTwelveDayMath.approximateWorkloadHours(totalPlotY: y)
     }
 }
