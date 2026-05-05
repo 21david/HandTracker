@@ -1,27 +1,100 @@
 import Foundation
-import Combine
 
 @MainActor
 final class MacDashboardViewModel: ObservableObject {
+
+    /// Seconds since Unix epoch — alarms stay silent until this instant (recording continues).
+    private static let recordingAlarmMuteExpiryKey = "HandTrack.recordingAlarmMuteExpiry"
+    /// Last mute duration preset the user tapped (highlight persists until mute ends).
+    private static let recordingAlarmMuteChosenMinutesKey = "HandTrack.recordingAlarmMuteChosenMinutes"
+
     @Published private(set) var syncStatus = "Starting..."
+
+    /// If non-nil and in the future, break-alarm sounds are suppressed.
+    @Published private(set) var recordingAlarmMuteExpiresAt: Date?
+
+    /// Which mute pill was chosen for the active window (`nil` while not muted).
+    @Published private(set) var mutedBreakAlarmChosenMinutes: Int?
 
     private let monitor = KeystrokeMonitor()
     private var syncServer: HandTrackSyncServer?
 
+    init() {
+        recordingAlarmMuteExpiresAt = Self.loadMutedExpiryFromDefaults()
+        if let ex = recordingAlarmMuteExpiresAt, ex > Date() {
+            mutedBreakAlarmChosenMinutes = Self.loadMutedChosenMinutesFromDefaults(forExpiry: ex)
+        } else {
+            mutedBreakAlarmChosenMinutes = nil
+        }
+        refreshExpiredMuteIfNeeded(now: Date())
+    }
+
+    /// Clears persisted mute once `now` has passed expiry; harmless to call often.
+    func refreshExpiredMuteIfNeeded(now: Date = Date()) {
+        guard let until = recordingAlarmMuteExpiresAt, until <= now else { return }
+        recordingAlarmMuteExpiresAt = nil
+        mutedBreakAlarmChosenMinutes = nil
+        Self.clearMutedPersistence()
+    }
+
+    /// Extends the mute expiry to at least ``now`` plus the given duration (never shortens).
+    func muteBreakAlarms(minutes: Int) {
+        let duration = TimeInterval(minutes * 60)
+        let candidate = Date().addingTimeInterval(duration)
+        refreshExpiredMuteIfNeeded(now: Date())
+        if let existing = recordingAlarmMuteExpiresAt {
+            recordingAlarmMuteExpiresAt = candidate > existing ? candidate : existing
+        } else {
+            recordingAlarmMuteExpiresAt = candidate
+        }
+        mutedBreakAlarmChosenMinutes = minutes
+        persistMutedExpiryAndChosenMinutes()
+    }
+
+    /// Clears timed mute immediately (break alarms can resume).
+    func clearBreakAlarmMute() {
+        recordingAlarmMuteExpiresAt = nil
+        mutedBreakAlarmChosenMinutes = nil
+        Self.clearMutedPersistence()
+    }
+
+    func breakAlarmsMutedForPlaybackNow() -> Bool {
+        refreshExpiredMuteIfNeeded(now: Date())
+        guard let until = recordingAlarmMuteExpiresAt else { return false }
+        return until > Date()
+    }
+
     func start(store: HandTrackStore) {
-        monitor.onKeystroke = { [weak store] in
+        refreshExpiredMuteIfNeeded(now: Date())
+        monitor.onKeystroke = { [weak self, weak store] in
             Task { @MainActor in
-                store?.recordKeystroke()
+                guard let self, let store else { return }
+                store.recordKeystroke()
+                MacRecordingAlarmFeedback.afterKeystrokeRecorded(
+                    on: store,
+                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
+                )
             }
         }
-        monitor.onMouseClick = { [weak store] in
+        monitor.onMouseClick = { [weak self, weak store] in
             Task { @MainActor in
-                store?.recordMouseClick()
+                guard let self, let store else { return }
+                store.recordMouseClick()
+                MacRecordingAlarmFeedback.afterMouseClickRecorded(
+                    on: store,
+                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
+                )
             }
         }
-        monitor.onBufferedTravelPixels = { [weak store] batch in
+        monitor.onBufferedTravelPixels = { [weak self, weak store] batch in
             Task { @MainActor in
-                store?.recordMouseTravelPixels(batch)
+                guard let self, let store else { return }
+                store.recordMouseTravelPixels(batch)
+                MacRecordingAlarmFeedback.afterPointerTravelBatchRecorded(
+                    on: store,
+                    batchPixels: batch,
+                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
+                )
             }
         }
         monitor.start()
@@ -30,7 +103,8 @@ final class MacDashboardViewModel: ObservableObject {
         server.start()
         syncServer = server
 
-        syncStatus = "Recording keystrokes, mouse clicks, and pointer distance. Sync server runs on port 8787 while this app is open."
+        syncStatus =
+            "Listening on TCP 8787 — click “Sync & iPhone …” near the mute controls for full setup steps."
     }
 
     func stop() {
@@ -38,5 +112,45 @@ final class MacDashboardViewModel: ObservableObject {
         syncServer?.stop()
         syncServer = nil
         syncStatus = "Stopped"
+    }
+
+    private static func loadMutedExpiryFromDefaults() -> Date? {
+        let raw = UserDefaults.standard.double(forKey: recordingAlarmMuteExpiryKey)
+        guard raw > 0 else {
+            Self.clearStaleChosenMinutesOnly()
+            return nil
+        }
+        let date = Date(timeIntervalSince1970: raw)
+        guard date > Date() else {
+            Self.clearMutedPersistence()
+            return nil
+        }
+        return date
+    }
+
+    /// Load chosen interval from defaults once `expiresAt` is known to still be active.
+    private static func loadMutedChosenMinutesFromDefaults(forExpiry expiresAt: Date) -> Int? {
+        guard expiresAt > Date() else { return nil }
+        guard UserDefaults.standard.object(forKey: recordingAlarmMuteChosenMinutesKey) != nil else { return nil }
+        return UserDefaults.standard.integer(forKey: recordingAlarmMuteChosenMinutesKey)
+    }
+
+    private func persistMutedExpiryAndChosenMinutes() {
+        guard let until = recordingAlarmMuteExpiresAt else { return }
+        UserDefaults.standard.set(until.timeIntervalSince1970, forKey: Self.recordingAlarmMuteExpiryKey)
+        if let mins = mutedBreakAlarmChosenMinutes {
+            UserDefaults.standard.set(mins, forKey: Self.recordingAlarmMuteChosenMinutesKey)
+        }
+    }
+
+    /// Clear interval key leftover when expiry key is absent (defensive migration).
+    private static func clearStaleChosenMinutesOnly() {
+        guard UserDefaults.standard.object(forKey: recordingAlarmMuteExpiryKey) == nil else { return }
+        UserDefaults.standard.removeObject(forKey: recordingAlarmMuteChosenMinutesKey)
+    }
+
+    private static func clearMutedPersistence() {
+        UserDefaults.standard.removeObject(forKey: recordingAlarmMuteExpiryKey)
+        UserDefaults.standard.removeObject(forKey: recordingAlarmMuteChosenMinutesKey)
     }
 }

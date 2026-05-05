@@ -4,7 +4,8 @@ import SwiftUI
 private enum FiveMinuteMouseClickChart {
     /// Clicks per five-minute slice that fills the vertical scale (~24/min if evenly spread).
     static let comfortableClickCap: Double = 120
-    static let clicksAboveCapTowardFullOrange: Double = 17
+    /// Excess clicks above chart cap blended toward stressed red gradient.
+    static let clicksAboveCapStressWidth: Double = 17
     static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
@@ -12,9 +13,6 @@ struct MacMouseClickFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
 
     private let cap = FiveMinuteMouseClickChart.comfortableClickCap
-
-    private var baseTeal: Color { Color(red: 0.0, green: 0.65, blue: 0.58) }
-    private var stressOrange: (Double, Double, Double) { (0.96, 0.55, 0.12) }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
@@ -37,10 +35,13 @@ struct MacMouseClickFiveMinuteChart: View {
             xAxisMarks(boundaries: boundaries, slots: slots)
         }
         .chartYAxis {
-            AxisMarks(position: .leading)
+            MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral()
         }
-        .chartYAxisLabel("Mouse clicks", position: .leading)
+        .chartYAxisLabel(position: .leading) {
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Mouse clicks")
+        }
         .frame(height: 200)
+        .padding(.top, 20)
     }
 
     @ChartContentBuilder
@@ -76,9 +77,17 @@ struct MacMouseClickFiveMinuteChart: View {
             yStart: yStartValue,
             yEnd: yEndValue
         )
-        .foregroundStyle(barColor(clicks: plotted.count))
+        .foregroundStyle(
+            MacFiveMinuteBarStyle.barGradient(
+                stressAmount: MacFiveMinuteBarStyle.stressAmount(
+                    from: Double(plotted.count),
+                    cap: cap,
+                    excessWidth: FiveMinuteMouseClickChart.clicksAboveCapStressWidth
+                )
+            )
+        )
         .cornerRadius(4, style: .continuous)
-        .annotation(position: .top, alignment: .center, spacing: 4) {
+        .annotation(position: .top, alignment: .center, spacing: 10) {
             Text("\(plotted.count)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -123,22 +132,4 @@ struct MacMouseClickFiveMinuteChart: View {
         formatter.pmSymbol = "pm"
         return formatter
     }()
-
-    private func barColor(clicks: Int) -> Color {
-        if Double(clicks) <= cap {
-            return baseTeal.opacity(0.92)
-        }
-        let excess = Double(clicks) - cap
-        let tint = min(
-            excess / FiveMinuteMouseClickChart.clicksAboveCapTowardFullOrange,
-            1.0
-        )
-        let t: (Double, Double, Double) = (0.0, 0.65, 0.58)
-        let o = stressOrange
-        return Color(
-            red: t.0 + (o.0 - t.0) * tint,
-            green: t.1 + (o.1 - t.1) * tint,
-            blue: t.2 + (o.2 - t.2) * tint
-        )
-    }
 }
