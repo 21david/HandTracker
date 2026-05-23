@@ -3,36 +3,38 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		088AA0DD144372F7277FEDC5 /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */; };
 		2E7CF99307E27669255CB687 /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
+		35421D54D6032E1633FA5C28 /* MacMouseClickFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6036A366479B2D39EB5E89C6 /* MacMouseClickFiveMinuteChart.swift */; };
 		3D16E292575937C6D0EA8F83 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
 		44FE79965F3AFD52882D17BF /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */; };
+		4A952D63298EDFD6D9436609 /* MacTwelveDayStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70551CD510281F301E3F3E6 /* MacTwelveDayStackedUsagePainChart.swift */; };
 		58DE2F1B66381255F78AC372 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63D8CC683C076EC281966D5 /* MacContentView.swift */; };
 		59158E26FF64D58755F83EDA /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
 		5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146C8D2A4D3920FD04677E44 /* HandTrackSyncClient.swift */; };
 		6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */; };
 		6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */; };
+		613F0EA5760A9312ECC72AFE /* HandTrackRecordingAlarmConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC78C1126119B7CB82ABA583 /* HandTrackRecordingAlarmConfig.swift */; };
 		6DBF27628AD133EBA4F8B0F7 /* HandTrackiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */; };
+		79A0FF74B13FE78F8BCA8009 /* MacMouseTravelFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E59EB986DE40C3FEF72DF321 /* MacMouseTravelFiveMinuteChart.swift */; };
 		8ACC513BFBBF6522D293EDA8 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 91F2A4B53502C34670516B15 /* libsqlite3.tbd */; };
+		8B435CE56B5B64A1E7454A79 /* MacFiveMinuteBarStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBAA0A4487D1FC60565EDD6 /* MacFiveMinuteBarStyle.swift */; };
+		919BA53FEC689A088885D6E9 /* MacTwelveHourStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = F34BF0D533D9E24DADC3ACBA /* MacTwelveHourStackedUsagePainChart.swift */; };
 		9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */; };
 		9CDFC87C04384BBDD32E769C /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF81706D5FEE826182D099B /* HandTrackModels.swift */; };
 		A03646486FC032B05E9E1EAE /* HourlyReminderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7192C91A840E78EE5369C8 /* HourlyReminderManager.swift */; };
-		A7B8C9D0E1F2031425361709 /* HandTrackRecordingAlarmConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B8C9D0E1F2031425361708 /* HandTrackRecordingAlarmConfig.swift */; };
-		A7B8C9D0E1F203142536170B /* MacRecordingAlarmFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B8C9D0E1F203142536170A /* MacRecordingAlarmFeedback.swift */; };
-		E2F3A4B5C6D708192A3B4C5E /* MacFiveMinuteBarStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F3A4B5C6D708192A3B4C5D /* MacFiveMinuteBarStyle.swift */; };
+		A8D55D0823339A9E94368263 /* MacRecordingAlarmFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B351081CC9B032DE485A17 /* MacRecordingAlarmFeedback.swift */; };
 		ADD9FF72ABBEF6A02E464FAE /* iOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */; };
-		B2C3D4E56F708192A3B4C5D6 /* MacMouseClickFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D45E6F708192A3B4C5 /* MacMouseClickFiveMinuteChart.swift */; };
-		B827364554463728394A5061 /* MacMouseTravelFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C918273645564738495A6071 /* MacMouseTravelFiveMinuteChart.swift */; };
+		B059F7005EE09E5E9F85ABAB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E13AA063DCED39539A9D22F0 /* Assets.xcassets */; };
+		BBBE573F6552F28E3D224EB9 /* MacUsageDashboardSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A49ECD653B341A31D74364F /* MacUsageDashboardSummary.swift */; };
 		BCB90670AA142626C83EAC1B /* MacKeystrokeFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9E63403B96632533425BBA /* MacKeystrokeFiveMinuteChart.swift */; };
-		EA10B928374655443322110E /* MacTwelveHourStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA10B928374655443322110F /* MacTwelveHourStackedUsagePainChart.swift */; };
-		F2A2B2C2D2E2F30405060708 /* MacTwelveDayStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A2B2C2D2E2F30405060709 /* MacTwelveDayStackedUsagePainChart.swift */; };
-		FEDD00112233AABB44556601 /* MacUsageDashboardSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEDD00112233AABB44556602 /* MacUsageDashboardSummary.swift */; };
 		D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */; };
 		E38114F530AD2EFD9D6C8DD6 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 91F2A4B53502C34670516B15 /* libsqlite3.tbd */; };
+		FB3EFAABF415048D46DF3E67 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2FBF5B1D5AC440E4F321C9D /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,21 +46,23 @@
 		43D22807424218D3439E70F1 /* HandTrackSyncServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncServer.swift; sourceTree = "<group>"; };
 		4E914CE5426C11B666C4075A /* HandTrackiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackiOSApp.swift; sourceTree = "<group>"; };
 		4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackMacApp.swift; sourceTree = "<group>"; };
+		6036A366479B2D39EB5E89C6 /* MacMouseClickFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseClickFiveMinuteChart.swift; sourceTree = "<group>"; };
 		87D24C932F4C9694B7AC5499 /* HandTrackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackStore.swift; sourceTree = "<group>"; };
 		881F21A86E215DD6E36E13DB /* KeystrokeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeMonitor.swift; sourceTree = "<group>"; };
+		8A49ECD653B341A31D74364F /* MacUsageDashboardSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUsageDashboardSummary.swift; sourceTree = "<group>"; };
 		91F2A4B53502C34670516B15 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
-		A1B2C3D45E6F708192A3B4C5 /* MacMouseClickFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseClickFiveMinuteChart.swift; sourceTree = "<group>"; };
-		A7B8C9D0E1F2031425361708 /* HandTrackRecordingAlarmConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackRecordingAlarmConfig.swift; sourceTree = "<group>"; };
-		A7B8C9D0E1F203142536170A /* MacRecordingAlarmFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingAlarmFeedback.swift; sourceTree = "<group>"; };
-		E2F3A4B5C6D708192A3B4C5D /* MacFiveMinuteBarStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFiveMinuteBarStyle.swift; sourceTree = "<group>"; };
-		EA10B928374655443322110F /* MacTwelveHourStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveHourStackedUsagePainChart.swift; sourceTree = "<group>"; };
-		F2A2B2C2D2E2F30405060709 /* MacTwelveDayStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveDayStackedUsagePainChart.swift; sourceTree = "<group>"; };
-		FEDD00112233AABB44556602 /* MacUsageDashboardSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUsageDashboardSummary.swift; sourceTree = "<group>"; };
+		A2FBF5B1D5AC440E4F321C9D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BAE221A14BE8FCE673F866B0 /* HandTrackMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BBBAA0A4487D1FC60565EDD6 /* MacFiveMinuteBarStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFiveMinuteBarStyle.swift; sourceTree = "<group>"; };
+		C2B351081CC9B032DE485A17 /* MacRecordingAlarmFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingAlarmFeedback.swift; sourceTree = "<group>"; };
 		C63D8CC683C076EC281966D5 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
-		C918273645564738495A6071 /* MacMouseTravelFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseTravelFiveMinuteChart.swift; sourceTree = "<group>"; };
-		CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CE17560C22CF1217876FD5B8 /* HandTrackiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E13AA063DCED39539A9D22F0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E3356963EAEE06BA2CC2F34E /* iOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSContentView.swift; sourceTree = "<group>"; };
+		E59EB986DE40C3FEF72DF321 /* MacMouseTravelFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseTravelFiveMinuteChart.swift; sourceTree = "<group>"; };
+		E70551CD510281F301E3F3E6 /* MacTwelveDayStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveDayStackedUsagePainChart.swift; sourceTree = "<group>"; };
+		F34BF0D533D9E24DADC3ACBA /* MacTwelveHourStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveHourStackedUsagePainChart.swift; sourceTree = "<group>"; };
+		FC78C1126119B7CB82ABA583 /* HandTrackRecordingAlarmConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackRecordingAlarmConfig.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,17 +98,17 @@
 			isa = PBXGroup;
 			children = (
 				4F3B40749D1AF6402E7CD2E2 /* HandTrackMacApp.swift */,
+				FC78C1126119B7CB82ABA583 /* HandTrackRecordingAlarmConfig.swift */,
 				C63D8CC683C076EC281966D5 /* MacContentView.swift */,
 				345D8CF31F7F469CAA793110 /* MacDashboardViewModel.swift */,
-				A7B8C9D0E1F2031425361708 /* HandTrackRecordingAlarmConfig.swift */,
-				A7B8C9D0E1F203142536170A /* MacRecordingAlarmFeedback.swift */,
-				E2F3A4B5C6D708192A3B4C5D /* MacFiveMinuteBarStyle.swift */,
+				BBBAA0A4487D1FC60565EDD6 /* MacFiveMinuteBarStyle.swift */,
 				3B9E63403B96632533425BBA /* MacKeystrokeFiveMinuteChart.swift */,
-				A1B2C3D45E6F708192A3B4C5 /* MacMouseClickFiveMinuteChart.swift */,
-				C918273645564738495A6071 /* MacMouseTravelFiveMinuteChart.swift */,
-				EA10B928374655443322110F /* MacTwelveHourStackedUsagePainChart.swift */,
-				F2A2B2C2D2E2F30405060709 /* MacTwelveDayStackedUsagePainChart.swift */,
-				FEDD00112233AABB44556602 /* MacUsageDashboardSummary.swift */,
+				6036A366479B2D39EB5E89C6 /* MacMouseClickFiveMinuteChart.swift */,
+				E59EB986DE40C3FEF72DF321 /* MacMouseTravelFiveMinuteChart.swift */,
+				C2B351081CC9B032DE485A17 /* MacRecordingAlarmFeedback.swift */,
+				E70551CD510281F301E3F3E6 /* MacTwelveDayStackedUsagePainChart.swift */,
+				F34BF0D533D9E24DADC3ACBA /* MacTwelveHourStackedUsagePainChart.swift */,
+				8A49ECD653B341A31D74364F /* MacUsageDashboardSummary.swift */,
 			);
 			name = Sources;
 			path = Apps/macOS/Sources;
@@ -113,6 +117,8 @@
 		206C4C4243470E5384292F22 = {
 			isa = PBXGroup;
 			children = (
+				C5C97E0752625B6900B279B0 /* Resources */,
+				E304DC6D9F4495205C8EA5D9 /* Resources */,
 				335F2BAC809C82E62B17A4A7 /* Sources */,
 				1541B3D0FAB8E7A189683B77 /* Sources */,
 				8D2A91569840B4EAC8543F90 /* Sources */,
@@ -172,12 +178,30 @@
 			path = Packages/HandTrackPersistence/Sources;
 			sourceTree = "<group>";
 		};
+		C5C97E0752625B6900B279B0 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				E13AA063DCED39539A9D22F0 /* Assets.xcassets */,
+			);
+			name = Resources;
+			path = Apps/iOS/Resources;
+			sourceTree = "<group>";
+		};
 		CD1544B2DA8577A3906E27DF /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				91F2A4B53502C34670516B15 /* libsqlite3.tbd */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E304DC6D9F4495205C8EA5D9 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A2FBF5B1D5AC440E4F321C9D /* Assets.xcassets */,
+			);
+			name = Resources;
+			path = Apps/macOS/Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -188,6 +212,7 @@
 			buildConfigurationList = 5270D779CB823B995FBA2C2A /* Build configuration list for PBXNativeTarget "HandTrackMac" */;
 			buildPhases = (
 				B6F9E5DEA26EE046165CEBCC /* Sources */,
+				1DD6D8707426DACDD4220C31 /* Resources */,
 				D0CADA4A7F9596BD40B931E8 /* Frameworks */,
 			);
 			buildRules = (
@@ -206,6 +231,7 @@
 			buildConfigurationList = 58679B65D2570537D94702B7 /* Build configuration list for PBXNativeTarget "HandTrackiOS" */;
 			buildPhases = (
 				AD99FD52356453212ED906E3 /* Sources */,
+				7C03A8EBAB0798C248E63022 /* Resources */,
 				2F99A39AAEFA967DAE65C60D /* Frameworks */,
 			);
 			buildRules = (
@@ -229,9 +255,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					368A3C67550B7B2EB66294DB = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
 					};
 					559D53F46209885B9FAA6F42 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -246,6 +274,7 @@
 			);
 			mainGroup = 206C4C4243470E5384292F22;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -254,6 +283,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1DD6D8707426DACDD4220C31 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB3EFAABF415048D46DF3E67 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7C03A8EBAB0798C248E63022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B059F7005EE09E5E9F85ABAB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		AD99FD52356453212ED906E3 /* Sources */ = {
@@ -276,21 +324,21 @@
 			files = (
 				9B18A4071B1F7A390AF5A065 /* HandTrackMacApp.swift in Sources */,
 				9CDFC87C04384BBDD32E769C /* HandTrackModels.swift in Sources */,
+				613F0EA5760A9312ECC72AFE /* HandTrackRecordingAlarmConfig.swift in Sources */,
 				D8418D451F3A48CE1E68123C /* HandTrackStore.swift in Sources */,
 				5C2F38B19A249210520BA703 /* HandTrackSyncClient.swift in Sources */,
 				088AA0DD144372F7277FEDC5 /* HandTrackSyncServer.swift in Sources */,
 				6054D2CF69C5980407FB707C /* KeystrokeMonitor.swift in Sources */,
 				58DE2F1B66381255F78AC372 /* MacContentView.swift in Sources */,
 				6128AFFAA31F7B768B4F08CE /* MacDashboardViewModel.swift in Sources */,
-				A7B8C9D0E1F2031425361709 /* HandTrackRecordingAlarmConfig.swift in Sources */,
-				A7B8C9D0E1F203142536170B /* MacRecordingAlarmFeedback.swift in Sources */,
-				E2F3A4B5C6D708192A3B4C5E /* MacFiveMinuteBarStyle.swift in Sources */,
+				8B435CE56B5B64A1E7454A79 /* MacFiveMinuteBarStyle.swift in Sources */,
 				BCB90670AA142626C83EAC1B /* MacKeystrokeFiveMinuteChart.swift in Sources */,
-				B2C3D4E56F708192A3B4C5D6 /* MacMouseClickFiveMinuteChart.swift in Sources */,
-				B827364554463728394A5061 /* MacMouseTravelFiveMinuteChart.swift in Sources */,
-				EA10B928374655443322110E /* MacTwelveHourStackedUsagePainChart.swift in Sources */,
-				F2A2B2C2D2E2F30405060708 /* MacTwelveDayStackedUsagePainChart.swift in Sources */,
-				FEDD00112233AABB44556601 /* MacUsageDashboardSummary.swift in Sources */,
+				35421D54D6032E1633FA5C28 /* MacMouseClickFiveMinuteChart.swift in Sources */,
+				79A0FF74B13FE78F8BCA8009 /* MacMouseTravelFiveMinuteChart.swift in Sources */,
+				A8D55D0823339A9E94368263 /* MacRecordingAlarmFeedback.swift in Sources */,
+				4A952D63298EDFD6D9436609 /* MacTwelveDayStackedUsagePainChart.swift in Sources */,
+				919BA53FEC689A088885D6E9 /* MacTwelveHourStackedUsagePainChart.swift in Sources */,
+				BBBE573F6552F28E3D224EB9 /* MacUsageDashboardSummary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,7 +350,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -386,7 +433,6 @@
 				CODE_SIGN_IDENTITY = "Apple Development: david.espinosa.21@gmail.com (5MRCT284D8)";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/macOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -404,7 +450,6 @@
 				CODE_SIGN_IDENTITY = "Apple Development: david.espinosa.21@gmail.com (5MRCT284D8)";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/macOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -420,7 +465,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

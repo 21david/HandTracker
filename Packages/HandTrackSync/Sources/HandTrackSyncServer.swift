@@ -121,14 +121,14 @@ final class HandTrackSyncServer: ObservableObject {
         }
 
         if isPOST, streamComplete {
-            return Data(data[bodyStart...])
+            return data
         }
 
         if isPOST {
             return nil
         }
 
-        return Data(data[..<bodyStart])
+        return data.prefix(bodyStart)
     }
 
     private static func parseContentLength(_ headers: String) -> Int? {
@@ -143,28 +143,36 @@ final class HandTrackSyncServer: ObservableObject {
     }
 
     private func response(for requestData: Data) -> Data {
-        guard let request = String(data: requestData, encoding: .utf8) else {
-            return httpResponse(status: "400 Bad Request", body: "Bad request")
+        guard let separatorRange = requestData.range(of: Self.headerBodySeparator) else {
+            return httpResponse(status: "400 Bad Request", body: "Missing headers")
         }
 
-        if request.hasPrefix("GET /health") {
+        let headersData = requestData.subdata(in: requestData.startIndex..<separatorRange.lowerBound)
+        guard let headers = String(data: headersData, encoding: .utf8) else {
+            return httpResponse(status: "400 Bad Request", body: "Invalid headers")
+        }
+
+        let firstLine = headers.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
+        print("Sync server received: \(firstLine)")
+
+        if firstLine.hasPrefix("GET /health") {
             return httpResponse(status: "200 OK", body: #"{"status":"ok"}"#)
         }
 
-        guard request.hasPrefix("POST /logs"),
-              let separatorRange = request.range(of: "\r\n\r\n") else {
+        guard firstLine.hasPrefix("POST /logs") else {
             return httpResponse(status: "404 Not Found", body: "Not found")
         }
 
-        let body = String(request[separatorRange.upperBound...])
-        guard let bodyData = body.data(using: .utf8) else {
-            return httpResponse(status: "400 Bad Request", body: "Bad body")
+        let bodyData = requestData.subdata(in: separatorRange.upperBound..<requestData.endIndex)
+        if bodyData.isEmpty {
+            return httpResponse(status: "400 Bad Request", body: "Empty body")
         }
 
         do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .millisecondsSince1970
             let logs = try decoder.decode([HourlyHandLog].self, from: bodyData)
+            print("Sync server importing \(logs.count) logs")
             let acceptedIDs = store.importHourlyLogs(logs)
 
             let encoder = JSONEncoder()
@@ -172,6 +180,7 @@ final class HandTrackSyncServer: ObservableObject {
             let responseData = try encoder.encode(SyncResponse(acceptedIDs: acceptedIDs))
             return httpResponse(status: "200 OK", body: responseData)
         } catch {
+            print("Sync server error decoding logs: \(error)")
             return httpResponse(status: "400 Bad Request", body: "Invalid logs: \(error.localizedDescription)")
         }
     }

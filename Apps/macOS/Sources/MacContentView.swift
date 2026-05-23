@@ -36,6 +36,7 @@ struct MacContentView: View {
         .frame(minWidth: 900, idealWidth: 960, maxWidth: .infinity)
         .frame(minHeight: 940, idealHeight: 980, maxHeight: .infinity)
         .onAppear {
+            print("MacContentView appeared")
             viewModel.start(store: store)
         }
         .onDisappear {
@@ -49,6 +50,14 @@ struct MacContentView: View {
     private var headerBar: some View {
         TimelineView(.periodic(from: .now, by: 10)) { timeline in
             HStack(alignment: .center, spacing: 12) {
+                Image("HandLogo")
+                    .renderingMode(.original)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 32, height: 32)
+                    .accessibilityLabel("HandTrack")
+
                 Button {
                     showSyncInfo.toggle()
                 } label: {

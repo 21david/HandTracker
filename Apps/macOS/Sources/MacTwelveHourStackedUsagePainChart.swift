@@ -180,6 +180,77 @@ private struct HourStackLayer: Identifiable {
     }
 }
 
+private struct TwelveHourPainVisibility: Equatable {
+    var showLeft = true
+    var showRight = true
+}
+
+private enum TwelveHourPainStyle {
+    static let leftColor = Color.orange
+    static let rightColor = Color.yellow
+
+    static let leftInk = Color(red: 0.35, green: 0.15, blue: 0.02)
+    static let rightInk = Color(red: 0.30, green: 0.25, blue: 0.02)
+}
+
+private struct TwelveHourPainDotOverlay: View {
+    let pain: Double
+    let hand: HourPainSample.Hand
+
+    private var dotColor: Color {
+        hand == .left ? TwelveHourPainStyle.leftColor : TwelveHourPainStyle.rightColor
+    }
+
+    private var dotInk: Color {
+        hand == .left ? TwelveHourPainStyle.leftInk : TwelveHourPainStyle.rightInk
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(dotColor)
+                .overlay(
+                    Circle()
+                        .strokeBorder(dotInk.opacity(0.42), lineWidth: 0.65)
+                )
+            Text(pain.handTrackPainCompactLabel)
+                .font(.system(size: 9.75, weight: .medium, design: .monospaced))
+                .monospacedDigit()
+                .tracking(-0.55)
+                .scaleEffect(x: 0.9, anchor: .center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.43)
+                .foregroundStyle(dotInk)
+        }
+        .frame(width: 24, height: 24)
+    }
+}
+
+private struct HourPainSample: Identifiable {
+    enum Hand: String, Equatable {
+        case left
+        case right
+    }
+
+    let plotIndex: Int
+    let hourStart: Date
+    let createdAt: Date
+    let pain: Double
+    let hand: Hand
+
+    var xPosition: Double {
+        let calendar = Calendar.current
+        let minute = Double(calendar.component(.minute, from: createdAt))
+        let second = Double(calendar.component(.second, from: createdAt))
+        let fraction = (minute + second / 60.0) / 60.0
+        return Double(plotIndex) + fraction
+    }
+
+    var id: String {
+        "\(createdAt.timeIntervalSince1970)-\(hand.rawValue)"
+    }
+}
+
 private func buildStackLayers(slots: [ComputerUsageHourSlot], caps: HourComfortCaps) -> [HourStackLayer] {
     let band = TwelveHourCombinedChart.usageBandThird
     let maxComposite = TwelveHourCombinedChart.chartUsageAxisMax
@@ -261,6 +332,8 @@ private struct TwelveHourUsagePrepared {
     let slots: [ComputerUsageHourSlot]
     let stackLayers: [HourStackLayer]
     let hourBoundaries: [Int]
+    let leftPainSamples: [HourPainSample]
+    let rightPainSamples: [HourPainSample]
 
     /// Must run on the main actor: reads from `@MainActor` ``HandTrackStore``.
     @MainActor
@@ -268,6 +341,35 @@ private struct TwelveHourUsagePrepared {
         slots = store.computerUsageByTrailingCalendarHours(reference: referenceDate, count: 12)
         stackLayers = buildStackLayers(slots: slots, caps: comfortCaps)
         hourBoundaries = Array(0...slots.count)
+
+        let logsByHour = Dictionary(grouping: store.hourlyLogs, by: { $0.hourStart.startOfHour })
+        var left: [HourPainSample] = []
+        var right: [HourPainSample] = []
+        for (index, slot) in slots.enumerated() {
+            guard let logs = logsByHour[slot.hourStart] else {
+                continue
+            }
+            // Sort by createdAt to ensure lines connect correctly across multiple logs in the same hour
+            let sortedLogs = logs.sorted(by: { $0.createdAt < $1.createdAt })
+            for log in sortedLogs {
+                left.append(HourPainSample(
+                    plotIndex: index,
+                    hourStart: slot.hourStart,
+                    createdAt: log.createdAt,
+                    pain: log.painLevelLeft,
+                    hand: .left
+                ))
+                right.append(HourPainSample(
+                    plotIndex: index,
+                    hourStart: slot.hourStart,
+                    createdAt: log.createdAt,
+                    pain: log.painLevelRight,
+                    hand: .right
+                ))
+            }
+        }
+        leftPainSamples = left
+        rightPainSamples = right
     }
 }
 
@@ -281,7 +383,7 @@ private func twelveHourLeadingWorkloadMinuteTickLabel(chartY: Double) -> String 
 }
 
 @AxisContentBuilder
-private func twelveHourWorkloadMinuteYAxis() -> some AxisContent {
+private func twelveHourDualYAxes() -> some AxisContent {
     let tickValues = stride(from: 0.0, through: 10.0, by: 2.0).map { $0 }
 
     AxisMarks(position: .leading, values: tickValues) { value in
@@ -292,6 +394,24 @@ private func twelveHourWorkloadMinuteYAxis() -> some AxisContent {
             }
         }
     }
+
+    AxisMarks(position: .trailing, values: tickValues) { value in
+        AxisTick().foregroundStyle(.secondary.opacity(0.55))
+        AxisValueLabel {
+            if let y = value.as(Double.self) {
+                Text(twelveHourYAxisNumericTickLabel(y))
+            }
+        }
+    }
+}
+
+private func twelveHourYAxisNumericTickLabel(_ value: Double) -> String {
+    guard value.isFinite else { return "—" }
+    let r = round(value)
+    guard abs(value - r) >= 1e-3 else {
+        return String(format: "%.0f", r)
+    }
+    return String(format: "%g", value)
 }
 
 private struct TwelveHourComfortCalibrationPopover: View {
@@ -382,6 +502,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
 
 private struct TwelveHourUsageChartPanel: View {
     let prepared: TwelveHourUsagePrepared
+    let painVisibility: TwelveHourPainVisibility
 
     private var slots: [ComputerUsageHourSlot] { prepared.slots }
 
@@ -389,11 +510,18 @@ private struct TwelveHourUsageChartPanel: View {
         Chart {
             usageBaselineMark()
             stackedUsageRectangleMarks()
+            if painVisibility.showLeft {
+                leftPainLineMarks()
+            }
+            if painVisibility.showRight {
+                rightPainLineMarks()
+            }
+            painPointMarks()
         }
         .chartLegend(.hidden)
         .chartYScale(domain: 0...TwelveHourCombinedChart.chartUsageAxisMax)
         .chartYAxis {
-            twelveHourWorkloadMinuteYAxis()
+            twelveHourDualYAxes()
         }
         .chartYAxisLabel(position: .leading, spacing: 10) {
             MacFiveMinuteChartLeadingCaption.rotated180Degrees {
@@ -403,6 +531,20 @@ private struct TwelveHourUsageChartPanel: View {
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
                     Text("worth of work (bars)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .chartYAxisLabel(position: .trailing, spacing: 10) {
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees {
+                VStack(alignment: .center, spacing: 2) {
+                    Text("Pain levels")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
+                    Text("(line graphs)")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -448,6 +590,67 @@ private struct TwelveHourUsageChartPanel: View {
             .cornerRadius(6, style: .continuous)
             .annotation(position: .overlay, alignment: .center, spacing: 0) {
                 stackedUsageSegmentOverlay(layer: layer, slots: slots)
+            }
+        }
+    }
+
+    @ChartContentBuilder
+    private func leftPainLineMarks() -> some ChartContent {
+        ForEach(prepared.leftPainSamples) { sample in
+            LineMark(
+                x: .value("Hour", sample.xPosition),
+                y: .value("Pain", sample.pain),
+                series: .value("Hand", "Left")
+            )
+            .interpolationMethod(.linear)
+            .foregroundStyle(TwelveHourPainStyle.leftColor.opacity(0.70))
+            .lineStyle(StrokeStyle(lineWidth: 2.55, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    @ChartContentBuilder
+    private func rightPainLineMarks() -> some ChartContent {
+        ForEach(prepared.rightPainSamples) { sample in
+            LineMark(
+                x: .value("Hour", sample.xPosition),
+                y: .value("Pain", sample.pain),
+                series: .value("Hand", "Right")
+            )
+            .interpolationMethod(.linear)
+            .foregroundStyle(TwelveHourPainStyle.rightColor.opacity(0.70))
+            .lineStyle(StrokeStyle(lineWidth: 2.55, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    @ChartContentBuilder
+    private func painPointMarks() -> some ChartContent {
+        if painVisibility.showLeft {
+            ForEach(prepared.leftPainSamples) { sample in
+                PointMark(
+                    x: .value("Hour", sample.xPosition),
+                    y: .value("Pain", sample.pain)
+                )
+                .symbol(.circle)
+                .symbolSize(176)
+                .foregroundStyle(Color.clear)
+                .annotation(position: .overlay, alignment: .center, spacing: 0) {
+                    TwelveHourPainDotOverlay(pain: sample.pain, hand: .left)
+                }
+            }
+        }
+
+        if painVisibility.showRight {
+            ForEach(prepared.rightPainSamples) { sample in
+                PointMark(
+                    x: .value("Hour", sample.xPosition),
+                    y: .value("Pain", sample.pain)
+                )
+                .symbol(.circle)
+                .symbolSize(176)
+                .foregroundStyle(Color.clear)
+                .annotation(position: .overlay, alignment: .center, spacing: 0) {
+                    TwelveHourPainDotOverlay(pain: sample.pain, hand: .right)
+                }
             }
         }
     }
@@ -506,6 +709,31 @@ private struct TwelveHourUsageChartPanel: View {
     }
 }
 
+private struct TwelveHourPainGraphsToggleMatrix: View {
+    @Binding var visibility: TwelveHourPainVisibility
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Left", isOn: $visibility.showLeft)
+                .toggleStyle(.checkbox)
+                .font(.caption2.weight(.medium))
+            Toggle("Right", isOn: $visibility.showRight)
+                .toggleStyle(.checkbox)
+                .font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - Public entry point
 
 struct MacTwelveHourStackedUsagePainChart: View {
@@ -522,6 +750,7 @@ struct MacTwelveHourStackedUsagePainChart: View {
     private var avgPixelThousandsPerMinute = 7
 
     @State private var showComfortCalibration = false
+    @State private var painVisibility = TwelveHourPainVisibility()
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { timeline in
@@ -537,6 +766,8 @@ struct MacTwelveHourStackedUsagePainChart: View {
             clicksPerMinute: avgClicksPerMinute,
             pixelThousandsPerMinute: avgPixelThousandsPerMinute
         )
+        // Pass store.hourlyLogs to ensure the view re-renders when logs change
+        let _ = store.hourlyLogs
         let prepared = TwelveHourUsagePrepared(store: store, referenceDate: referenceDate, comfortCaps: caps)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -544,6 +775,8 @@ struct MacTwelveHourStackedUsagePainChart: View {
                     .font(.headline)
 
                 Spacer(minLength: 8)
+
+                TwelveHourPainGraphsToggleMatrix(visibility: $painVisibility)
 
                 Button {
                     showComfortCalibration.toggle()
@@ -565,7 +798,7 @@ struct MacTwelveHourStackedUsagePainChart: View {
                 }
             }
 
-            TwelveHourUsageChartPanel(prepared: prepared)
+            TwelveHourUsageChartPanel(prepared: prepared, painVisibility: painVisibility)
         }
     }
 }
