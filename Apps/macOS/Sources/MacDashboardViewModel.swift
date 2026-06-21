@@ -16,6 +16,8 @@ final class MacDashboardViewModel: ObservableObject {
     /// Which mute pill was chosen for the active window (`nil` while not muted).
     @Published private(set) var mutedBreakAlarmChosenMinutes: Int?
 
+    let activityLimits = MacActivityLimitController()
+
     private let monitor = KeystrokeMonitor()
     private var syncServer: HandTrackSyncServer?
 
@@ -66,35 +68,29 @@ final class MacDashboardViewModel: ObservableObject {
 
     func start(store: HandTrackStore) {
         refreshExpiredMuteIfNeeded(now: Date())
+        activityLimits.attach(store: store)
         monitor.onKeystroke = { [weak self, weak store] in
             Task { @MainActor in
                 guard let self, let store else { return }
                 store.recordKeystroke()
-                MacRecordingAlarmFeedback.afterKeystrokeRecorded(
-                    on: store,
-                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
-                )
+                guard !self.breakAlarmsMutedForPlaybackNow() else { return }
+                self.activityLimits.registerEvent(of: .keystrokes)
             }
         }
         monitor.onMouseClick = { [weak self, weak store] in
             Task { @MainActor in
                 guard let self, let store else { return }
                 store.recordMouseClick()
-                MacRecordingAlarmFeedback.afterMouseClickRecorded(
-                    on: store,
-                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
-                )
+                guard !self.breakAlarmsMutedForPlaybackNow() else { return }
+                self.activityLimits.registerEvent(of: .mouseClicks)
             }
         }
         monitor.onBufferedTravelPixels = { [weak self, weak store] batch in
             Task { @MainActor in
                 guard let self, let store else { return }
                 store.recordMouseTravelPixels(batch)
-                MacRecordingAlarmFeedback.afterPointerTravelBatchRecorded(
-                    on: store,
-                    batchPixels: batch,
-                    userMutedAlarms: self.breakAlarmsMutedForPlaybackNow()
-                )
+                guard !self.breakAlarmsMutedForPlaybackNow() else { return }
+                self.activityLimits.registerEvent(of: .pointerTravel, eventMagnitude: batch)
             }
         }
         monitor.start()
@@ -111,6 +107,7 @@ final class MacDashboardViewModel: ObservableObject {
         monitor.stop()
         syncServer?.stop()
         syncServer = nil
+        activityLimits.detach()
         syncStatus = "Stopped"
     }
 

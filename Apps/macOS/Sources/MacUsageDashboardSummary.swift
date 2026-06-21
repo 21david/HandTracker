@@ -242,13 +242,32 @@ struct MacUsageDashboardSummary: View {
     @AppStorage(ComfortKeys.dayShowKeys) private var dayShowKeys = true
     @AppStorage(ComfortKeys.dayShowClicks) private var dayShowClicks = true
     @AppStorage(ComfortKeys.dayShowTravel) private var dayShowTravel = true
+    @AppStorage(HandTrackActivityLimitsStorage.dashboardRollingWindowMinutesKey)
+    private var rollingWindowMinutes = HandTrackActivityLimitsStorage.Defaults.dashboardRollingWindowMinutes
 
     let now: Date
 
     @State private var showYesterday = false
+    @State private var showRollingWindowEditor = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                metricRowHeading("Last \(rollingWindowMinutes) minutes")
+                Button {
+                    showRollingWindowEditor.toggle()
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .help("Customize the rolling window length")
+                .popover(isPresented: $showRollingWindowEditor, arrowEdge: .bottom) {
+                    rollingWindowEditor
+                }
+            }
+            rollingWindowRowOfTiles
 
             metricRowHeading("This hour")
             hourRowOfTiles
@@ -271,6 +290,55 @@ struct MacUsageDashboardSummary: View {
             MacYesterdayUsageTotalsSheet(reference: now)
                 .environmentObject(store)
                 .presentationBackground(.thinMaterial)
+        }
+    }
+
+    private var rollingWindowEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Rolling window length")
+                .font(.subheadline.weight(.semibold))
+            Stepper(value: $rollingWindowMinutes, in: 1...240, step: 1) {
+                Text("\(rollingWindowMinutes) minutes")
+                    .monospacedDigit()
+            }
+            Text("Used for the dashboard row above “This hour”.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(width: 240)
+    }
+
+    private var rollingKeys: Int { store.keysInLastMinutes(rollingWindowMinutes, reference: now) }
+    private var rollingClicks: Int { store.clicksInLastMinutes(rollingWindowMinutes, reference: now) }
+    private var rollingTravel: Double {
+        store.mouseTravelPixelsInLastMinutes(rollingWindowMinutes, reference: now)
+    }
+
+    private var rollingPlotY: Double {
+        MacDashboardTwelveHourMath.compositeStackPlotY(
+            keystrokes: rollingKeys,
+            mouseClicks: rollingClicks,
+            travelPixels: rollingTravel,
+            caps: twelveHourCaps
+        )
+    }
+
+    /// Minutes value scales linearly with the rolling window vs. one full hour for accurate
+    /// "estimated minutes" — without this scaling a 10-minute window would otherwise present
+    /// itself as up to an hour's worth of work.
+    private var rollingWorkloadMinutes: Double {
+        let scale = Double(rollingWindowMinutes) / 60.0
+        let hourBudget = MacDashboardTwelveHourMath.approximateWorkloadMinutes(totalPlotY: rollingPlotY)
+        return hourBudget * scale
+    }
+
+    private var rollingWindowRowOfTiles: some View {
+        HStack(spacing: 16) {
+            DashValueTile(title: "Keys", value: MacDashFormat.integers(rollingKeys))
+            DashValueTile(title: "Clicks", value: MacDashFormat.integers(rollingClicks))
+            DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(rollingTravel))
+            DashValueTile(title: "Estimated minutes", value: MacDashFormat.minutesWorkload(rollingWorkloadMinutes))
         }
     }
 

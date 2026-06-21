@@ -87,7 +87,7 @@ struct MacMouseClickFiveMinuteChart: View {
             )
         )
         .cornerRadius(4, style: .continuous)
-        .annotation(position: .top, alignment: .center, spacing: 10) {
+        .annotation(position: .top, alignment: .center, spacing: 5) {
             Text("\(plotted.count)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)

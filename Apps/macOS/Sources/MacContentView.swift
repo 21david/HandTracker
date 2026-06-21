@@ -5,6 +5,7 @@ struct MacContentView: View {
     @StateObject private var viewModel = MacDashboardViewModel()
     @State private var showSyncInfo = false
     @State private var showIosLogsSheet = false
+    @State private var showActivityLimits = false
     @State private var expandedSyncedLogJournalIDs: Set<UUID> = []
 
     private static let muteTimeFormatter: DateFormatter = {
@@ -18,6 +19,8 @@ struct MacContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 headerBar
+
+                MacActivityBreakBanner(controller: viewModel.activityLimits)
 
                 TimelineView(.periodic(from: .now, by: 30)) { ctx in
                     MacUsageDashboardSummary(now: ctx.date)
@@ -93,6 +96,21 @@ struct MacContentView: View {
                 .buttonStyle(GrayAccessoryPillButtonStyle())
                 .help("Reveal HandTrack’s SQLite folder in Finder")
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Button {
+                    showActivityLimits.toggle()
+                } label: {
+                    Label("Activity Limits", systemImage: "timer")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .tracking(0.15)
+                }
+                .buttonStyle(OrangeAccessoryPillButtonStyle())
+                .help("Set per-activity break-alarm thresholds")
+                .popover(isPresented: $showActivityLimits, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
+                    MacActivityLimitsPopover {
+                        viewModel.activityLimits.refreshAfterSettingsChange()
+                    }
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -392,6 +410,56 @@ private struct MacHourlySyncedLogRow: View {
 }
 
 // MARK: - Mute controls + gray accessory pills
+
+/// Warm-orange capsule for Activity Limits — uses the same geometry as the gray pill
+/// to keep the header visually consistent while signaling the safety / break theme.
+private struct OrangeAccessoryPillButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.white.opacity(configuration.isPressed ? 0.88 : 0.97))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                ZStack {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.99, green: 0.62, blue: 0.20),
+                                    Color(red: 0.85, green: 0.40, blue: 0.06),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.34), Color.clear],
+                                startPoint: .top,
+                                endPoint: UnitPoint(x: 0.5, y: 0.55)
+                            )
+                        )
+                        .padding(1)
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.45),
+                                    Color.black.opacity(0.28),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: .black.opacity(0.26), radius: configuration.isPressed ? 1 : 3, x: 0, y: configuration.isPressed ? 0 : 2)
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
 
 /// Neutral metal capsule for Logs / Open Data Folder (muted blue‑pill geometry, gray alloy).
 private struct GrayAccessoryPillButtonStyle: ButtonStyle {

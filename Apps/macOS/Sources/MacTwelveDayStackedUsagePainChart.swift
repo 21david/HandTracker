@@ -571,6 +571,7 @@ private struct TwelveDayStackedUsageRectanglesChartContent: ChartContent {
     let gap: Double
     let slots: [ComputerUsageDaySlot]
     let segmentInteriorLabelOffsetXByLayerID: [String: CGFloat]
+    let topmostLayerIDByPlotIndex: [Int: String]
 
     var body: some ChartContent {
         ForEach(layers) { layer in
@@ -606,7 +607,30 @@ private struct TwelveDayStackedUsageRectanglesChartContent: ChartContent {
                 labelOffsetX: segmentInteriorLabelOffsetXByLayerID[layer.id] ?? 0
             )
         }
+        .annotation(position: .top, alignment: .center, spacing: 5) {
+            if topmostLayerIDByPlotIndex[layer.plotIndex] == layer.id {
+                Text(twelveDayEstimatedTimeLabel(plotY: layer.yHigh))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                EmptyView()
+            }
+        }
     }
+}
+
+/// Approximate workload for one column of the twelve-day chart. Same formula as the leading axis:
+/// `plotY / 2` → hours; rounded to the nearest minute and shown as `~Hh Mm`, `~Hh`, or `~Mm`.
+private func twelveDayEstimatedTimeLabel(plotY: Double) -> String {
+    guard plotY.isFinite, plotY > 0 else { return "" }
+    let hours = max(0, plotY / 2.0)
+    let totalMinutes = Int((hours * 60.0).rounded(.toNearestOrAwayFromZero))
+    guard totalMinutes > 0 else { return "" }
+    let h = totalMinutes / 60
+    let m = totalMinutes % 60
+    if h == 0 { return "\(m)m" }
+    if m == 0 { return "\(h)h" }
+    return "\(h)h \(m)m"
 }
 
 private struct TwelveDayPainConnectorLinesChartContent: ChartContent {
@@ -736,22 +760,24 @@ private struct TwelveDayBarCenterDayLabelsOverlay: View {
     let geometry: GeometryProxy
 
     var body: some View {
-        let plotBounds = geometry[chartProxy.plotAreaFrame]
-        ForEach(Array(slots.enumerated()), id: \.offset) { pair in
-            let idx = pair.offset
-            let slot = pair.element
-            let centerXData = TwelveDayCombinedChart.dayBarBucketCenter(plotIndex: idx)
-            if let plotted = chartProxy.position(for: (x: centerXData, y: 0.0)) {
-                Text(TwelveDayCombinedChart.axisLabelFormatter.string(from: slot.dayStart))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-                    .multilineTextAlignment(.center)
-                    .position(
-                        x: plotBounds.origin.x + plotted.x,
-                        y: plotBounds.maxY + 11
-                    )
-                    .allowsHitTesting(false)
+        if let plotFrameAnchor = chartProxy.plotFrame {
+            let plotBounds = geometry[plotFrameAnchor]
+            ForEach(Array(slots.enumerated()), id: \.offset) { pair in
+                let idx = pair.offset
+                let slot = pair.element
+                let centerXData = TwelveDayCombinedChart.dayBarBucketCenter(plotIndex: idx)
+                if let plotted = chartProxy.position(for: (x: centerXData, y: 0.0)) {
+                    Text(TwelveDayCombinedChart.axisLabelFormatter.string(from: slot.dayStart))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .multilineTextAlignment(.center)
+                        .position(
+                            x: plotBounds.origin.x + plotted.x,
+                            y: plotBounds.maxY + 11
+                        )
+                        .allowsHitTesting(false)
+                }
             }
         }
     }
@@ -766,6 +792,16 @@ private struct TwelveDayPainChartSurface: View {
     let gap: Double
     let segmentInteriorLabelOffsetXByLayerID: [String: CGFloat]
 
+    private var topmostLayerIDByPlotIndex: [Int: String] {
+        var byIndex: [Int: DayStackLayer] = [:]
+        for layer in stackLayers {
+            if (byIndex[layer.plotIndex]?.yHigh ?? -.infinity) < layer.yHigh {
+                byIndex[layer.plotIndex] = layer
+            }
+        }
+        return byIndex.mapValues(\.id)
+    }
+
     var body: some View {
         Chart {
             TwelveDayBaselineRuleChartContent()
@@ -773,7 +809,8 @@ private struct TwelveDayPainChartSurface: View {
                 layers: stackLayers,
                 gap: gap,
                 slots: slots,
-                segmentInteriorLabelOffsetXByLayerID: segmentInteriorLabelOffsetXByLayerID
+                segmentInteriorLabelOffsetXByLayerID: segmentInteriorLabelOffsetXByLayerID,
+                topmostLayerIDByPlotIndex: topmostLayerIDByPlotIndex
             )
             TwelveDayPainConnectorLinesChartContent(
                 curves: activeCurves,
@@ -998,6 +1035,13 @@ private enum TwelveDayUsageBarsAppStorage {
     static let showKeysKey = "HandTrack.mac.twelveDayChartShowKeys"
     static let showClicksKey = "HandTrack.mac.twelveDayChartShowClicks"
     static let showTravelKey = "HandTrack.mac.twelveDayChartShowPointerTravel"
+
+    static let worstLeftKey = "HandTrack.mac.twelveDayPainWorstLeft"
+    static let averageLeftKey = "HandTrack.mac.twelveDayPainAverageLeft"
+    static let firstLeftKey = "HandTrack.mac.twelveDayPainFirstLeft"
+    static let worstRightKey = "HandTrack.mac.twelveDayPainWorstRight"
+    static let averageRightKey = "HandTrack.mac.twelveDayPainAverageRight"
+    static let firstRightKey = "HandTrack.mac.twelveDayPainFirstRight"
 }
 
 private struct TwelveDayUsageBarsToggleStrip: View {
@@ -1049,15 +1093,35 @@ struct MacTwelveDayStackedUsagePainChart: View {
     @AppStorage(TwelveDayUsageBarsAppStorage.showClicksKey) private var twelveDayChartShowClicks = true
     @AppStorage(TwelveDayUsageBarsAppStorage.showTravelKey) private var twelveDayChartShowTravel = true
 
-    /// Default: **left‑hand** pain series only (`Max`/`Avg`/morning); enable right‑hand boxes as needed.
-    @State private var painVisibility = TwelveDayPainVisibility(
-        worstLeft: true,
-        averageLeft: true,
-        firstLeft: true,
-        worstRight: false,
-        averageRight: false,
-        firstRight: false
-    )
+    @AppStorage(TwelveDayUsageBarsAppStorage.worstLeftKey) private var painWorstLeft = true
+    @AppStorage(TwelveDayUsageBarsAppStorage.averageLeftKey) private var painAverageLeft = true
+    @AppStorage(TwelveDayUsageBarsAppStorage.firstLeftKey) private var painFirstLeft = true
+    @AppStorage(TwelveDayUsageBarsAppStorage.worstRightKey) private var painWorstRight = false
+    @AppStorage(TwelveDayUsageBarsAppStorage.averageRightKey) private var painAverageRight = false
+    @AppStorage(TwelveDayUsageBarsAppStorage.firstRightKey) private var painFirstRight = false
+
+    private var painVisibilityBinding: Binding<TwelveDayPainVisibility> {
+        Binding(
+            get: {
+                TwelveDayPainVisibility(
+                    worstLeft: painWorstLeft,
+                    averageLeft: painAverageLeft,
+                    firstLeft: painFirstLeft,
+                    worstRight: painWorstRight,
+                    averageRight: painAverageRight,
+                    firstRight: painFirstRight
+                )
+            },
+            set: { newValue in
+                painWorstLeft = newValue.worstLeft
+                painAverageLeft = newValue.averageLeft
+                painFirstLeft = newValue.firstLeft
+                painWorstRight = newValue.worstRight
+                painAverageRight = newValue.averageRight
+                painFirstRight = newValue.firstRight
+            }
+        )
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 3600)) { timeline in
@@ -1074,6 +1138,14 @@ struct MacTwelveDayStackedUsagePainChart: View {
             showTravel: twelveDayChartShowTravel
         )
         let prepared = TwelveDayPainPrepared(store: store, referenceDate: referenceDate, usageVisibility: usageBarsVisibility)
+        let painVisibility = TwelveDayPainVisibility(
+            worstLeft: painWorstLeft,
+            averageLeft: painAverageLeft,
+            firstLeft: painFirstLeft,
+            worstRight: painWorstRight,
+            averageRight: painAverageRight,
+            firstRight: painFirstRight
+        )
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("Past 12 days")
@@ -1086,7 +1158,7 @@ struct MacTwelveDayStackedUsagePainChart: View {
                         showTravel: $twelveDayChartShowTravel
                     )
 
-                    TwelveDayPainGraphsToggleMatrix(visibility: $painVisibility)
+                    TwelveDayPainGraphsToggleMatrix(visibility: painVisibilityBinding)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }

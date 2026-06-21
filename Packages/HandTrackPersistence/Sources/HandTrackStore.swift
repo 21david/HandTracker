@@ -213,6 +213,36 @@ final class HandTrackStore: ObservableObject {
         }
     }
 
+    // MARK: - Trailing rolling window (not clock-aligned, used by activity limits + dashboard row)
+
+    /// Sum of keystrokes whose minute-bucket starts within the last `minutes` minutes ending at `reference`.
+    func keysInLastMinutes(_ minutes: Int, reference: Date = Date()) -> Int {
+        let span = max(1, minutes)
+        let start = reference.addingTimeInterval(-Double(span) * 60.0)
+        return keystrokeBuckets.reduce(0) { sum, bucket in
+            guard bucket.minuteStart >= start, bucket.minuteStart <= reference else { return sum }
+            return sum + bucket.keyCount
+        }
+    }
+
+    func clicksInLastMinutes(_ minutes: Int, reference: Date = Date()) -> Int {
+        let span = max(1, minutes)
+        let start = reference.addingTimeInterval(-Double(span) * 60.0)
+        return mouseClickBuckets.reduce(0) { sum, bucket in
+            guard bucket.minuteStart >= start, bucket.minuteStart <= reference else { return sum }
+            return sum + bucket.clickCount
+        }
+    }
+
+    func mouseTravelPixelsInLastMinutes(_ minutes: Int, reference: Date = Date()) -> Double {
+        let span = max(1, minutes)
+        let start = reference.addingTimeInterval(-Double(span) * 60.0)
+        return mouseTravelBuckets.reduce(0.0) { sum, bucket in
+            guard bucket.minuteStart >= start, bucket.minuteStart <= reference else { return sum }
+            return sum + bucket.travelPixels
+        }
+    }
+
     func averageWordsPerMinuteForCurrentHour(reference: Date = Date()) -> Double {
         let hourStart = reference.startOfHour
         let elapsedMinutes = max(reference.timeIntervalSince(hourStart) / 60, 1)

@@ -84,7 +84,7 @@ struct MacMouseTravelFiveMinuteChart: View {
             )
         )
         .cornerRadius(4, style: .continuous)
-        .annotation(position: .top, alignment: .center, spacing: 10) {
+        .annotation(position: .top, alignment: .center, spacing: 5) {
             Text(Self.compactPixelLabel(plotted.pixels))
                 .font(.caption2)
                 .foregroundStyle(.secondary)

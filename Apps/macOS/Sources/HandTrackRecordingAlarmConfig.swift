@@ -1,38 +1,165 @@
 import Foundation
 
-/// **Edit thresholds here** — alarms use totals in the **current five-minute calendar slot**
-/// (:00–:05, :05–:10, …), same window as the rightmost histogram bar.
-///
-/// When a metric is **≥** its threshold inside that slot, each further key / click / movement batch
-/// can play sound (unless muted in the app header). Thresholds reset when the clock rolls into the next slot.
-enum HandTrackRecordingAlarmConfig {
+/// Storage keys + defaults for the **Activity Limits** feature. Each activity (keystrokes, mouse clicks,
+/// pointer travel) gets its own enabled flag, threshold (count over a rolling minute window), break
+/// duration in minutes, and the extra seconds each event adds to a running break timer. Values are
+/// persisted via `@AppStorage` so users can edit them in the Activity Limits popover.
+enum HandTrackActivityLimitsStorage {
+    static let masterEnabledKey = "HandTrack.activityLimits.enabled"
+    static let soundNameKey = "HandTrack.activityLimits.soundName"
+    static let soundVolumeKey = "HandTrack.activityLimits.soundVolumePercent"
 
-    // MARK: - Developer / quick disable
+    static let keysEnabledKey = "HandTrack.activityLimits.keys.enabled"
+    static let keysThresholdKey = "HandTrack.activityLimits.keys.threshold"
+    static let keysWindowMinutesKey = "HandTrack.activityLimits.keys.windowMinutes"
+    static let keysBreakMinutesKey = "HandTrack.activityLimits.keys.breakMinutes"
+    static let keysExtensionSecondsKey = "HandTrack.activityLimits.keys.extensionSeconds"
 
-    /// Master switch compiled into the app — turn off builds without ripping out callers.
-    static var isGloballyEnabled: Bool = true
+    static let clicksEnabledKey = "HandTrack.activityLimits.clicks.enabled"
+    static let clicksThresholdKey = "HandTrack.activityLimits.clicks.threshold"
+    static let clicksWindowMinutesKey = "HandTrack.activityLimits.clicks.windowMinutes"
+    static let clicksBreakMinutesKey = "HandTrack.activityLimits.clicks.breakMinutes"
+    static let clicksExtensionSecondsKey = "HandTrack.activityLimits.clicks.extensionSeconds"
 
-    /// `NSSound(named:)` base name (`/System/Library/Sounds`).
-    static var systemSoundName: String = "Tink"
+    static let travelEnabledKey = "HandTrack.activityLimits.travel.enabled"
+    static let travelThresholdKey = "HandTrack.activityLimits.travel.threshold"
+    static let travelWindowMinutesKey = "HandTrack.activityLimits.travel.windowMinutes"
+    static let travelBreakMinutesKey = "HandTrack.activityLimits.travel.breakMinutes"
+    static let travelExtensionSecondsKey = "HandTrack.activityLimits.travel.extensionSeconds"
 
-    /// NSSound playback level `0 … 1` (relative to system output). Main volume still applies system-wide.
-    static var dingPlaybackVolume: Float = 0.35
+    /// Window length (minutes) for the "Last XX minutes" dashboard row.
+    static let dashboardRollingWindowMinutesKey = "HandTrack.dashboard.rollingWindowMinutes"
 
-    // MARK: - Keystrokes
+    enum Defaults {
+        static let masterEnabled = true
+        static let soundName = "Tink"
+        static let soundVolumePercent = 35
 
-    static var keystrokesAlarmEnabled: Bool = true
-    /// Keys summed in the **current five-minute** window; default matches keystroke chart Y cap.
-    static var keystrokesPerFiveMinuteThreshold: Int = 275
+        static let keysEnabled = true
+        static let keysThreshold = 1000
+        static let keysWindowMinutes = 10
+        static let keysBreakMinutes = 3
+        static let keysExtensionSeconds = 3
 
-    // MARK: - Mouse clicks
+        static let clicksEnabled = true
+        static let clicksThreshold = 350
+        static let clicksWindowMinutes = 10
+        static let clicksBreakMinutes = 3
+        static let clicksExtensionSeconds = 3
 
-    static var mouseClicksAlarmEnabled: Bool = true
-    /// Matches mouse-click histogram Y cap by default.
-    static var mouseClicksPerFiveMinuteThreshold: Int = 120
+        static let travelEnabled = true
+        static let travelThreshold = 500_000
+        static let travelWindowMinutes = 10
+        static let travelBreakMinutes = 3
+        static let travelExtensionSeconds = 3
 
-    // MARK: - Pointer travel
+        static let dashboardRollingWindowMinutes = 10
+    }
+}
 
-    static var pointerTravelAlarmEnabled: Bool = true
-    /// Points/pixels in the **current five-minute** window; matches pointer travel chart Y cap by default.
-    static var pointerTravelPixelsPerFiveMinuteThreshold: Double = 125_000
+/// Snapshot of all activity-limit settings at a single point in time. Read from `UserDefaults` so
+/// non-View consumers (the controller, alarm feedback) can avoid SwiftUI dependencies.
+struct HandTrackActivityLimitsSnapshot {
+    struct PerActivity {
+        var enabled: Bool
+        var threshold: Double
+        var windowMinutes: Int
+        var breakMinutes: Int
+        var extensionSeconds: Int
+    }
+
+    var masterEnabled: Bool
+    var soundName: String
+    var soundVolumePercent: Int
+
+    var keys: PerActivity
+    var clicks: PerActivity
+    var travel: PerActivity
+
+    static func loadFromUserDefaults() -> HandTrackActivityLimitsSnapshot {
+        let d = UserDefaults.standard
+
+        func boolOrDefault(_ key: String, _ fallback: Bool) -> Bool {
+            d.object(forKey: key) == nil ? fallback : d.bool(forKey: key)
+        }
+        func intOrDefault(_ key: String, _ fallback: Int) -> Int {
+            d.object(forKey: key) == nil ? fallback : d.integer(forKey: key)
+        }
+        func stringOrDefault(_ key: String, _ fallback: String) -> String {
+            d.string(forKey: key) ?? fallback
+        }
+
+        let keys = PerActivity(
+            enabled: boolOrDefault(HandTrackActivityLimitsStorage.keysEnabledKey,
+                                   HandTrackActivityLimitsStorage.Defaults.keysEnabled),
+            threshold: Double(intOrDefault(HandTrackActivityLimitsStorage.keysThresholdKey,
+                                           HandTrackActivityLimitsStorage.Defaults.keysThreshold)),
+            windowMinutes: intOrDefault(HandTrackActivityLimitsStorage.keysWindowMinutesKey,
+                                        HandTrackActivityLimitsStorage.Defaults.keysWindowMinutes),
+            breakMinutes: intOrDefault(HandTrackActivityLimitsStorage.keysBreakMinutesKey,
+                                       HandTrackActivityLimitsStorage.Defaults.keysBreakMinutes),
+            extensionSeconds: intOrDefault(HandTrackActivityLimitsStorage.keysExtensionSecondsKey,
+                                           HandTrackActivityLimitsStorage.Defaults.keysExtensionSeconds)
+        )
+        let clicks = PerActivity(
+            enabled: boolOrDefault(HandTrackActivityLimitsStorage.clicksEnabledKey,
+                                   HandTrackActivityLimitsStorage.Defaults.clicksEnabled),
+            threshold: Double(intOrDefault(HandTrackActivityLimitsStorage.clicksThresholdKey,
+                                           HandTrackActivityLimitsStorage.Defaults.clicksThreshold)),
+            windowMinutes: intOrDefault(HandTrackActivityLimitsStorage.clicksWindowMinutesKey,
+                                        HandTrackActivityLimitsStorage.Defaults.clicksWindowMinutes),
+            breakMinutes: intOrDefault(HandTrackActivityLimitsStorage.clicksBreakMinutesKey,
+                                       HandTrackActivityLimitsStorage.Defaults.clicksBreakMinutes),
+            extensionSeconds: intOrDefault(HandTrackActivityLimitsStorage.clicksExtensionSecondsKey,
+                                           HandTrackActivityLimitsStorage.Defaults.clicksExtensionSeconds)
+        )
+        let travel = PerActivity(
+            enabled: boolOrDefault(HandTrackActivityLimitsStorage.travelEnabledKey,
+                                   HandTrackActivityLimitsStorage.Defaults.travelEnabled),
+            threshold: Double(intOrDefault(HandTrackActivityLimitsStorage.travelThresholdKey,
+                                           HandTrackActivityLimitsStorage.Defaults.travelThreshold)),
+            windowMinutes: intOrDefault(HandTrackActivityLimitsStorage.travelWindowMinutesKey,
+                                        HandTrackActivityLimitsStorage.Defaults.travelWindowMinutes),
+            breakMinutes: intOrDefault(HandTrackActivityLimitsStorage.travelBreakMinutesKey,
+                                       HandTrackActivityLimitsStorage.Defaults.travelBreakMinutes),
+            extensionSeconds: intOrDefault(HandTrackActivityLimitsStorage.travelExtensionSecondsKey,
+                                           HandTrackActivityLimitsStorage.Defaults.travelExtensionSeconds)
+        )
+
+        return HandTrackActivityLimitsSnapshot(
+            masterEnabled: boolOrDefault(HandTrackActivityLimitsStorage.masterEnabledKey,
+                                         HandTrackActivityLimitsStorage.Defaults.masterEnabled),
+            soundName: stringOrDefault(HandTrackActivityLimitsStorage.soundNameKey,
+                                       HandTrackActivityLimitsStorage.Defaults.soundName),
+            soundVolumePercent: intOrDefault(HandTrackActivityLimitsStorage.soundVolumeKey,
+                                             HandTrackActivityLimitsStorage.Defaults.soundVolumePercent),
+            keys: keys,
+            clicks: clicks,
+            travel: travel
+        )
+    }
+}
+
+enum HandTrackActivityKind: String, CaseIterable, Identifiable, Hashable {
+    case keystrokes
+    case mouseClicks
+    case pointerTravel
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .keystrokes: return "Keys"
+        case .mouseClicks: return "Clicks"
+        case .pointerTravel: return "Pointer travel"
+        }
+    }
+
+    var unitNoun: String {
+        switch self {
+        case .keystrokes: return "keys"
+        case .mouseClicks: return "clicks"
+        case .pointerTravel: return "px"
+        }
+    }
 }

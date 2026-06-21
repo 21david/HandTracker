@@ -8,6 +8,9 @@ private enum TwelveHourComfortStorage {
     static let avgKeysPerMinuteKey = "HandTrack.mac.twelveHourAvgKeysPerMinute"
     static let avgClicksPerMinuteKey = "HandTrack.mac.twelveHourAvgClicksPerMinute"
     static let avgPixelThousandsPerMinuteKey = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
+
+    static let showLeftPainKey = "HandTrack.mac.twelveHourShowLeftPain"
+    static let showRightPainKey = "HandTrack.mac.twelveHourShowRightPain"
 }
 
 /// Bar height denominators derive from **`2 × moderateRate × hour`** per modality ⇒ sustained one hour **at reference** across all three ≈ **`½`** the **`0 … 10`** column (`3 × nominalThird × 0.5 = 10/2`).
@@ -382,6 +385,15 @@ private func twelveHourLeadingWorkloadMinuteTickLabel(chartY: Double) -> String 
     return "\(m)m"
 }
 
+/// Approximate "minutes worth of work" for one column of the twelve-hour chart. Same formula as
+/// the leading axis ticks — `plotY × leadingMinutesPerPlotYUnit (= 6 min / unit)`.
+private func twelveHourEstimatedMinutesLabel(plotY: Double) -> String {
+    guard plotY.isFinite, plotY > 0 else { return "" }
+    let mins = max(0.0, plotY * TwelveHourCombinedChart.leadingMinutesPerPlotYUnit)
+    let rounded = Int(mins.rounded(.toNearestOrAwayFromZero))
+    return "\(rounded) min"
+}
+
 @AxisContentBuilder
 private func twelveHourDualYAxes() -> some AxisContent {
     let tickValues = stride(from: 0.0, through: 10.0, by: 2.0).map { $0 }
@@ -568,6 +580,7 @@ private struct TwelveHourUsageChartPanel: View {
     @ChartContentBuilder
     private func stackedUsageRectangleMarks() -> some ChartContent {
         let slots = self.slots
+        let topmostIDByIndex = topmostLayerIDByPlotIndex
         ForEach(prepared.stackLayers) { layer in
             RectangleMark(
                 xStart: .value(
@@ -591,7 +604,28 @@ private struct TwelveHourUsageChartPanel: View {
             .annotation(position: .overlay, alignment: .center, spacing: 0) {
                 stackedUsageSegmentOverlay(layer: layer, slots: slots)
             }
+            .annotation(position: .top, alignment: .center, spacing: 5) {
+                if topmostIDByIndex[layer.plotIndex] == layer.id {
+                    Text(twelveHourEstimatedMinutesLabel(plotY: layer.yHigh))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    EmptyView()
+                }
+            }
         }
+    }
+
+    /// Highest stack layer (by `yHigh`) for each `plotIndex`. The "estimated minutes" annotation is
+    /// drawn only for that topmost layer so the label sits above the entire column.
+    private var topmostLayerIDByPlotIndex: [Int: String] {
+        var byIndex: [Int: HourStackLayer] = [:]
+        for layer in prepared.stackLayers {
+            if (byIndex[layer.plotIndex]?.yHigh ?? -.infinity) < layer.yHigh {
+                byIndex[layer.plotIndex] = layer
+            }
+        }
+        return byIndex.mapValues(\.id)
     }
 
     @ChartContentBuilder
@@ -750,7 +784,19 @@ struct MacTwelveHourStackedUsagePainChart: View {
     private var avgPixelThousandsPerMinute = 7
 
     @State private var showComfortCalibration = false
-    @State private var painVisibility = TwelveHourPainVisibility()
+
+    @AppStorage(TwelveHourComfortStorage.showLeftPainKey) private var showLeftPain = true
+    @AppStorage(TwelveHourComfortStorage.showRightPainKey) private var showRightPain = true
+
+    private var painVisibilityBinding: Binding<TwelveHourPainVisibility> {
+        Binding(
+            get: { TwelveHourPainVisibility(showLeft: showLeftPain, showRight: showRightPain) },
+            set: { newValue in
+                showLeftPain = newValue.showLeft
+                showRightPain = newValue.showRight
+            }
+        )
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { timeline in
@@ -769,6 +815,7 @@ struct MacTwelveHourStackedUsagePainChart: View {
         // Pass store.hourlyLogs to ensure the view re-renders when logs change
         let _ = store.hourlyLogs
         let prepared = TwelveHourUsagePrepared(store: store, referenceDate: referenceDate, comfortCaps: caps)
+        let painVisibility = TwelveHourPainVisibility(showLeft: showLeftPain, showRight: showRightPain)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("Past 12 hours")
@@ -776,7 +823,7 @@ struct MacTwelveHourStackedUsagePainChart: View {
 
                 Spacer(minLength: 8)
 
-                TwelveHourPainGraphsToggleMatrix(visibility: $painVisibility)
+                TwelveHourPainGraphsToggleMatrix(visibility: painVisibilityBinding)
 
                 Button {
                     showComfortCalibration.toggle()
