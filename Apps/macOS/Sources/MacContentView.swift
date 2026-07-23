@@ -48,13 +48,20 @@ struct MacContentView: View {
 
                 MacActivityBreakBanner(controller: viewModel.activityLimits)
 
-                TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                let summaryPulse =
+                    MacChartEquatableBucket.keystrokeRevision(store)
+                    &+ MacChartEquatableBucket.mouseClickRevision(store)
+                    &+ MacChartEquatableBucket.mouseTravelRevision(store)
+                    &+ MacChartEquatableBucket.scrollBumpRevision(store)
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
                     MacUsageDashboardSummary(now: ctx.date)
+                        .id(summaryPulse)
                 }
 
                 MacKeystrokeFiveMinuteChart()
                 MacMouseClickFiveMinuteChart()
                 MacMouseTravelFiveMinuteChart()
+                MacScrollBumpFiveMinuteChart()
                 MacTwelveHourStackedUsagePainChart()
                 MacTwelveDayStackedUsagePainChart()
             }

@@ -628,6 +628,7 @@ private func twelveDayEstimatedTimeLabel(slot: ComputerUsageDaySlot, rates: MacE
         keystrokes: slot.keystrokeCount,
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
+        scrollBumps: slot.scrollBumpCount,
         rates: rates
     )
     return MacEstimatedWorkloadMinutes.compactDurationLabel(totalMinutes: total)
@@ -642,6 +643,7 @@ private func twelveDayColumnUsageMinutes(
         keystrokes: slot.keystrokeCount,
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
+        scrollBumps: slot.scrollBumpCount,
         rates: rates
     )
 }
@@ -1190,28 +1192,83 @@ struct MacTwelveDayStackedUsagePainChart: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 3600)) { timeline in
-            chartContent(referenceDate: timeline.date)
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            MacTwelveDayStackedUsagePainChartFrame(
+                store: store,
+                referenceDate: timeline.date,
+                refreshBucket: MacChartEquatableBucket.stackedChartClockBucket(timeline.date),
+                painRevision: MacChartEquatableBucket.painLogsRevision(store),
+                capsFingerprint: dayCapsFingerprint,
+                usageVisibility: TwelveDayUsageModalityVisibility(
+                    showKeystrokes: twelveDayChartShowKeys,
+                    showMouseClicks: twelveDayChartShowClicks,
+                    showTravel: twelveDayChartShowTravel
+                ),
+                painVisibility: TwelveDayPainVisibility(
+                    worstLeft: painWorstLeft,
+                    averageLeft: painAverageLeft,
+                    firstLeft: painFirstLeft,
+                    worstRight: painWorstRight,
+                    averageRight: painAverageRight,
+                    firstRight: painFirstRight
+                ),
+                avgKeysPerMinute: avgKeysPerMinute,
+                avgClicksPerMinute: avgClicksPerMinute,
+                avgPixelThousandsPerMinute: avgPixelThousandsPerMinute,
+                showKeys: $twelveDayChartShowKeys,
+                showClicks: $twelveDayChartShowClicks,
+                showTravel: $twelveDayChartShowTravel,
+                painVisibilityBinding: painVisibilityBinding
+            )
+            .equatable()
+            .onAppear { ensureUsageBarsInvariant() }
+            .onChange(of: twelveDayChartShowKeys) { _, _ in ensureUsageBarsInvariant() }
+            .onChange(of: twelveDayChartShowClicks) { _, _ in ensureUsageBarsInvariant() }
+            .onChange(of: twelveDayChartShowTravel) { _, _ in ensureUsageBarsInvariant() }
         }
     }
 
-    @ViewBuilder
-    @MainActor
-    private func chartContent(referenceDate: Date) -> some View {
-        let usageBarsVisibility = TwelveDayUsageModalityVisibility(
-            showKeystrokes: twelveDayChartShowKeys,
-            showMouseClicks: twelveDayChartShowClicks,
-            showTravel: twelveDayChartShowTravel
-        )
-        let prepared = TwelveDayPainPrepared(store: store, referenceDate: referenceDate, usageVisibility: usageBarsVisibility)
-        let painVisibility = TwelveDayPainVisibility(
-            worstLeft: painWorstLeft,
-            averageLeft: painAverageLeft,
-            firstLeft: painFirstLeft,
-            worstRight: painWorstRight,
-            averageRight: painAverageRight,
-            firstRight: painFirstRight
-        )
+    private var dayCapsFingerprint: Int {
+        var hasher = Hasher()
+        hasher.combine(avgKeysPerMinute)
+        hasher.combine(avgClicksPerMinute)
+        hasher.combine(avgPixelThousandsPerMinute)
+        return hasher.finalize()
+    }
+
+    private func ensureUsageBarsInvariant() {
+        if !twelveDayChartShowKeys && !twelveDayChartShowClicks && !twelveDayChartShowTravel {
+            twelveDayChartShowKeys = true
+        }
+    }
+}
+
+private struct MacTwelveDayStackedUsagePainChartFrame: View, Equatable {
+    let store: HandTrackStore
+    let referenceDate: Date
+    let refreshBucket: Int
+    let painRevision: UInt64
+    let capsFingerprint: Int
+    let usageVisibility: TwelveDayUsageModalityVisibility
+    let painVisibility: TwelveDayPainVisibility
+    let avgKeysPerMinute: Int
+    let avgClicksPerMinute: Int
+    let avgPixelThousandsPerMinute: Int
+    @Binding var showKeys: Bool
+    @Binding var showClicks: Bool
+    @Binding var showTravel: Bool
+    var painVisibilityBinding: Binding<TwelveDayPainVisibility>
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.refreshBucket == rhs.refreshBucket
+            && lhs.painRevision == rhs.painRevision
+            && lhs.capsFingerprint == rhs.capsFingerprint
+            && lhs.usageVisibility == rhs.usageVisibility
+            && lhs.painVisibility == rhs.painVisibility
+    }
+
+    var body: some View {
+        let prepared = TwelveDayPainPrepared(store: store, referenceDate: referenceDate, usageVisibility: usageVisibility)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("Past 12 days")
@@ -1219,9 +1276,9 @@ struct MacTwelveDayStackedUsagePainChart: View {
                 Spacer(minLength: 0)
                 HStack(alignment: .top, spacing: 8) {
                     TwelveDayUsageBarsToggleStrip(
-                        showKeys: $twelveDayChartShowKeys,
-                        showClicks: $twelveDayChartShowClicks,
-                        showTravel: $twelveDayChartShowTravel
+                        showKeys: $showKeys,
+                        showClicks: $showClicks,
+                        showTravel: $showTravel
                     )
 
                     TwelveDayPainGraphsToggleMatrix(visibility: painVisibilityBinding)
@@ -1238,18 +1295,6 @@ struct MacTwelveDayStackedUsagePainChart: View {
                     pixelThousandsPerMinute: avgPixelThousandsPerMinute
                 )
             )
-        }
-        .onAppear {
-            ensureUsageBarsInvariant()
-        }
-        .onChange(of: twelveDayChartShowKeys) { _, _ in ensureUsageBarsInvariant() }
-        .onChange(of: twelveDayChartShowClicks) { _, _ in ensureUsageBarsInvariant() }
-        .onChange(of: twelveDayChartShowTravel) { _, _ in ensureUsageBarsInvariant() }
-    }
-
-    private func ensureUsageBarsInvariant() {
-        if !twelveDayChartShowKeys && !twelveDayChartShowClicks && !twelveDayChartShowTravel {
-            twelveDayChartShowKeys = true
         }
     }
 }

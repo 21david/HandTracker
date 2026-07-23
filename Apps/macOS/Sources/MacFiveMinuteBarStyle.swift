@@ -19,6 +19,10 @@ enum MacFiveMinuteBarStyle {
     private static let travelPurpleTop = (r: 0.46, g: 0.36, b: 0.98)
     private static let travelPurpleBottom = (r: 0.22, g: 0.08, b: 0.52)
 
+    /// Scroll bumps (amber stacked hour band).
+    private static let scrollAmberTop = (r: 0.98, g: 0.72, b: 0.22)
+    private static let scrollAmberBottom = (r: 0.62, g: 0.34, b: 0.04)
+
     /// `stressAmount` in `0...1`: 0 = saturated theme only; 1 = strong stress red.
     static func barGradient(stressAmount: Double) -> LinearGradient {
         stackedHourBandGradient(metric: .keystrokes, stressAmount: stressAmount)
@@ -38,6 +42,9 @@ enum MacFiveMinuteBarStyle {
         case .pixelTravel:
             top = travelPurpleTop
             bot = travelPurpleBottom
+        case .scrollBumps:
+            top = scrollAmberTop
+            bot = scrollAmberBottom
         }
         return blendedGradient(lightTopRGB: top, darkBottomRGB: bot, stressAmount: stressAmount)
     }
@@ -83,6 +90,7 @@ enum MacFiveMinuteBarStyle {
         case keystrokes
         case mouseClicks
         case pixelTravel
+        case scrollBumps
     }
 }
 

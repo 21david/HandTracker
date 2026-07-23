@@ -1,25 +1,36 @@
 import Charts
 import SwiftUI
 
-private enum FiveMinuteMouseClickChart {
-    /// Clicks per five-minute slice that fills the vertical scale (~24/min if evenly spread).
-    static let comfortableClickCap: Double = 120
-    /// Excess clicks above chart cap blended toward stressed red gradient.
-    static let clicksAboveCapStressWidth: Double = 17
+private enum LiveMouseClickChart {
+    static let fiveMinuteCap: Double = 120
+    static let fiveMinuteExcess: Double = 17
     static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
 struct MacMouseClickFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
+    @AppStorage(MacLiveUsageBucketResolution.storageKey)
+    private var resolutionRaw = MacLiveUsageBucketResolution.fiveMinutes.rawValue
+
+    private var resolution: Binding<MacLiveUsageBucketResolution> {
+        Binding(
+            get: { MacLiveUsageBucketResolution(rawValue: resolutionRaw) ?? .fiveMinutes },
+            set: { resolutionRaw = $0.rawValue }
+        )
+    }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+        let liveRevision = MacChartEquatableBucket.mouseClickRevision(store)
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
             MacMouseClickFiveMinuteChartRender(
                 store: store,
                 referenceDate: timeline.date,
-                refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date)
+                refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date),
+                liveRevision: liveRevision,
+                resolution: resolution.wrappedValue
             )
             .equatable()
+            .id(liveRevision)
         }
     }
 }
@@ -28,27 +39,77 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
     let store: HandTrackStore
     let referenceDate: Date
     let refreshBucket: Int
+    let liveRevision: Int
+    let resolution: MacLiveUsageBucketResolution
 
-    private let cap = FiveMinuteMouseClickChart.comfortableClickCap
+    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveMouseClickChart.fiveMinuteCap) }
+    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveMouseClickChart.fiveMinuteExcess) }
 
     var body: some View {
-        let slots = store.mouseClicksByFiveMinuteSlotsTrailing(reference: referenceDate, count: 12)
+        let slots = store.mouseClicksByFiveMinuteSlotsTrailing(
+            reference: referenceDate,
+            count: resolution.barCount,
+            minutesPerSlot: resolution.minutesPerBar
+        )
         let boundaries = Array(0...slots.count)
 
         Chart {
-            baselineMark()
-            clickMarks(slots: slots)
+            RuleMark(y: .value("Baseline", 0.0))
+                .foregroundStyle(LiveMouseClickChart.axisLineColor)
+                .lineStyle(StrokeStyle(lineWidth: 1))
+            ForEach(Array(slots.enumerated().compactMap { index, slot -> Plotted? in
+                guard slot.clickCount > 0 else { return nil }
+                return Plotted(index: index, count: slot.clickCount)
+            })) { plotted in
+                let gap: Double = resolution == .oneMinute ? 0.08 : 0.04
+                RectangleMark(
+                    xStart: .value("Start", Double(plotted.index) + gap),
+                    xEnd: .value("End", Double(plotted.index + 1) - gap),
+                    yStart: .value("Bottom", 0.0),
+                    yEnd: .value("Top", min(Double(plotted.count), cap))
+                )
+                .foregroundStyle(
+                    MacFiveMinuteBarStyle.stackedHourBandGradient(
+                        metric: .mouseClicks,
+                        stressAmount: MacFiveMinuteBarStyle.stressAmount(
+                            from: Double(plotted.count),
+                            cap: cap,
+                            excessWidth: excess
+                        )
+                    )
+                )
+                .cornerRadius(resolution == .oneMinute ? 2 : 4, style: .continuous)
+                .annotation(position: .top, alignment: .center, spacing: 5) {
+                    Text("\(plotted.count)")
+                        .font(resolution == .oneMinute ? .system(size: 8) : .caption2)
+                        .foregroundStyle(.secondary)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                }
+            }
         }
         .chartYScale(domain: 0...cap)
         .chartXScale(domain: 0...Double(slots.count))
         .chartXAxis {
-            xAxisMarks(boundaries: boundaries, slots: slots)
+            let labelEvery = resolution == .oneMinute ? 10 : 1
+            AxisMarks(preset: .aligned, values: boundaries) { value in
+                AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(LiveMouseClickChart.axisLineColor)
+                if let idx = value.as(Int.self),
+                   (idx % labelEvery == 0 || idx == slots.count),
+                   let date = tickDate(idx: idx, slots: slots)
+                {
+                    AxisValueLabel(centered: false) {
+                        Text(axisLabelFormatter.string(from: date))
+                            .font(.caption2)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
         }
-        .chartYAxis {
-            MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral()
-        }
+        .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral() }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Mouse clicks")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Clicks")
         }
         .frame(height: 200)
         .padding(.top, 20)
@@ -56,89 +117,23 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.refreshBucket == rhs.refreshBucket
+            && lhs.liveRevision == rhs.liveRevision
+            && lhs.resolution == rhs.resolution
     }
 
-    @ChartContentBuilder
-    private func baselineMark() -> some ChartContent {
-        RuleMark(y: .value("Baseline", 0.0))
-            .foregroundStyle(FiveMinuteMouseClickChart.axisLineColor)
-            .lineStyle(StrokeStyle(lineWidth: 1))
-    }
-
-    @ChartContentBuilder
-    private func clickMarks(slots: [MouseClickFiveMinuteSlot]) -> some ChartContent {
-        let visibleSlots = slots.enumerated().compactMap { index, slot -> PlottedClick? in
-            guard slot.clickCount > 0 else { return nil }
-            return PlottedClick(index: index, count: slot.clickCount)
-        }
-
-        ForEach(visibleSlots) { plotted in
-            clickBar(for: plotted)
-        }
-    }
-
-    @ChartContentBuilder
-    private func clickBar(for plotted: PlottedClick) -> some ChartContent {
-        let gap: Double = 0.04
-        let xStartValue = PlottableValue.value("Start", Double(plotted.index) + gap)
-        let xEndValue = PlottableValue.value("End", Double(plotted.index + 1) - gap)
-        let yStartValue = PlottableValue.value("Bottom", 0.0)
-        let yEndValue = PlottableValue.value("Top", min(Double(plotted.count), cap))
-
-        RectangleMark(
-            xStart: xStartValue,
-            xEnd: xEndValue,
-            yStart: yStartValue,
-            yEnd: yEndValue
-        )
-        .foregroundStyle(
-            MacFiveMinuteBarStyle.barGradient(
-                stressAmount: MacFiveMinuteBarStyle.stressAmount(
-                    from: Double(plotted.count),
-                    cap: cap,
-                    excessWidth: FiveMinuteMouseClickChart.clicksAboveCapStressWidth
-                )
-            )
-        )
-        .cornerRadius(4, style: .continuous)
-        .annotation(position: .top, alignment: .center, spacing: 5) {
-            Text("\(plotted.count)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private struct PlottedClick: Identifiable {
+    private struct Plotted: Identifiable {
         let index: Int
         let count: Int
         var id: Int { index }
     }
 
-    @AxisContentBuilder
-    private func xAxisMarks(boundaries: [Int], slots: [MouseClickFiveMinuteSlot]) -> some AxisContent {
-        AxisMarks(preset: .aligned, values: boundaries) { value in
-            AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
-                .foregroundStyle(FiveMinuteMouseClickChart.axisLineColor)
-            if let idx = value.as(Int.self), let date = Self.tickDate(idx: idx, slots: slots) {
-                AxisValueLabel(centered: false) {
-                    Text(Self.axisLabelFormatter.string(from: date))
-                        .font(.caption2)
-                        .foregroundStyle(.primary)
-                }
-            }
-        }
-    }
-
-    private static func tickDate(idx: Int, slots: [MouseClickFiveMinuteSlot]) -> Date? {
-        if idx >= 0 && idx < slots.count {
-            return slots[idx].slotStart
-        }
-        if idx == slots.count, let last = slots.last {
-            return last.slotEnd
-        }
+    private func tickDate(idx: Int, slots: [MouseClickFiveMinuteSlot]) -> Date? {
+        if idx >= 0 && idx < slots.count { return slots[idx].slotStart }
+        if idx == slots.count, let last = slots.last { return last.slotEnd }
         return nil
     }
 
+    private var axisLabelFormatter: DateFormatter { Self.axisLabelFormatter }
     private static let axisLabelFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mma"

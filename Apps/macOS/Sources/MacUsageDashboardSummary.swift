@@ -174,6 +174,7 @@ struct MacUsageDashboardSummary: View {
     private var rollingTravel: Double {
         store.mouseTravelPixelsInLastMinutes(rollingWindowMinutes, reference: now)
     }
+    private var rollingScrolls: Int { store.scrollsInLastMinutes(rollingWindowMinutes, reference: now) }
 
     private var workloadRates: MacEstimatedWorkloadMinutes.Rates {
         MacEstimatedWorkloadMinutes.Rates.from(
@@ -189,6 +190,7 @@ struct MacUsageDashboardSummary: View {
                 keystrokes: rollingKeys,
                 clicks: rollingClicks,
                 travelPixels: rollingTravel,
+                scrollBumps: rollingScrolls,
                 rates: workloadRates
             )
         )
@@ -199,6 +201,7 @@ struct MacUsageDashboardSummary: View {
             DashValueTile(title: "Keys", value: MacDashFormat.integers(rollingKeys))
             DashValueTile(title: "Clicks", value: MacDashFormat.integers(rollingClicks))
             DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(rollingTravel))
+            DashValueTile(title: "Scrolls", value: MacDashFormat.integers(rollingScrolls))
             DashValueTile(title: "Estimated minutes", value: MacDashFormat.minutesWorkload(rollingWorkloadMinutes))
         }
     }
@@ -212,6 +215,7 @@ struct MacUsageDashboardSummary: View {
     private var hourKeys: Int { store.keysSinceStartOfCurrentHour(reference: now) }
     private var hourClicks: Int { store.clicksSinceStartOfCurrentHour(reference: now) }
     private var hourTravel: Double { store.mouseTravelPixelsSinceStartOfCurrentHour(reference: now) }
+    private var hourScrolls: Int { store.scrollsSinceStartOfCurrentHour(reference: now) }
 
     private var hourWorkloadMinutes: Double {
         Double(
@@ -219,6 +223,7 @@ struct MacUsageDashboardSummary: View {
                 keystrokes: hourKeys,
                 clicks: hourClicks,
                 travelPixels: hourTravel,
+                scrollBumps: hourScrolls,
                 rates: workloadRates
             )
         )
@@ -229,6 +234,7 @@ struct MacUsageDashboardSummary: View {
             DashValueTile(title: "Keys", value: MacDashFormat.integers(hourKeys))
             DashValueTile(title: "Clicks", value: MacDashFormat.integers(hourClicks))
             DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(hourTravel))
+            DashValueTile(title: "Scrolls", value: MacDashFormat.integers(hourScrolls))
             DashValueTile(title: "Estimated minutes", value: MacDashFormat.minutesWorkload(hourWorkloadMinutes))
         }
     }
@@ -240,6 +246,7 @@ struct MacUsageDashboardSummary: View {
     private var todayKeys: Int { todayTotals?.keystrokeCount ?? 0 }
     private var todayClicks: Int { todayTotals?.mouseClickCount ?? 0 }
     private var todayTravel: Double { todayTotals?.travelPixels ?? 0 }
+    private var todayScrolls: Int { todayTotals?.scrollBumpCount ?? 0 }
 
     private var todayWorkloadHours: Double {
         Double(
@@ -247,6 +254,7 @@ struct MacUsageDashboardSummary: View {
                 keystrokes: todayKeys,
                 clicks: todayClicks,
                 travelPixels: todayTravel,
+                scrollBumps: todayScrolls,
                 rates: workloadRates
             )
         ) / 60.0
@@ -257,6 +265,7 @@ struct MacUsageDashboardSummary: View {
             DashValueTile(title: "Keys", value: MacDashFormat.integers(todayKeys))
             DashValueTile(title: "Clicks", value: MacDashFormat.integers(todayClicks))
             DashValueTile(title: "Pointer travel", value: MacDashFormat.travel(todayTravel))
+            DashValueTile(title: "Scrolls", value: MacDashFormat.integers(todayScrolls))
             DashValueTile(title: "Estimated time", value: MacDashFormat.hoursWorkload(todayWorkloadHours))
         }
     }
@@ -324,6 +333,7 @@ private struct MacYesterdayUsageTotalsSheet: View {
                 keystrokes: slot.keystrokeCount,
                 clicks: slot.mouseClickCount,
                 travelPixels: slot.travelPixels,
+                scrollBumps: slot.scrollBumpCount,
                 rates: MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
             )
         ) / 60.0

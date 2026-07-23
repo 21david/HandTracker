@@ -146,6 +146,11 @@ final class MacDashboardViewModel: ObservableObject {
                 }
             }
         }
+        monitor.onScrollBumps = { [weak store] bumps in
+            Task { @MainActor in
+                store?.recordScrollBumps(bumps, at: Date())
+            }
+        }
         monitor.onBufferedTravelPixels = { [weak self, weak store] batch in
             Task { @MainActor in
                 guard let self, let store else { return }

@@ -20,6 +20,7 @@ final class HandTrackStore: ObservableObject {
     @Published private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
     @Published private(set) var mouseClickBuckets: [MouseClickMinuteBucket] = []
     @Published private(set) var mouseTravelBuckets: [MouseTravelMinuteBucket] = []
+    @Published private(set) var scrollBumpBuckets: [ScrollBumpMinuteBucket] = []
     @Published private(set) var dailyPainRollups: [DailyPainRollup] = []
 
     let storageDirectory: URL
@@ -28,6 +29,11 @@ final class HandTrackStore: ObservableObject {
     private var database: OpaquePointer?
     /// Pain figures keyed by ``Date/startOfHandTrackingDay`` epoch (`timeIntervalSince1970`), mirrored in ``dailyPainRollups``.
     private var dailyPainRollupSnapshots: [TimeInterval: DailyPainRollupSnapshot] = [:]
+
+    /// Coalesce rapid live-input publishes so scrolling the dashboard doesn't rebuild Charts every notch.
+    private var livePublishScheduled = false
+    private var lastLivePublishAt: CFAbsoluteTime = 0
+    private static let livePublishMinInterval: CFAbsoluteTime = 0.08
 
     init(storageDirectory: URL? = nil) {
         let baseDirectory = storageDirectory ?? Self.defaultStorageDirectory()
@@ -122,6 +128,8 @@ final class HandTrackStore: ObservableObject {
             keystrokeBuckets.sort { $0.minuteStart < $1.minuteStart }
             save(bucket)
         }
+        // In-place bucket mutations don't go through @Published's setter.
+        publishLiveBucketsChanged()
     }
 
     func recordMouseClick(at timestamp: Date = Date()) {
@@ -135,6 +143,7 @@ final class HandTrackStore: ObservableObject {
             mouseClickBuckets.sort { $0.minuteStart < $1.minuteStart }
             saveMouseClick(bucket)
         }
+        publishLiveBucketsChanged()
     }
 
     func recordMouseTravelPixels(_ pixels: Double, at timestamp: Date = Date()) {
@@ -149,6 +158,59 @@ final class HandTrackStore: ObservableObject {
             mouseTravelBuckets.sort { $0.minuteStart < $1.minuteStart }
             saveMouseTravel(bucket)
         }
+        publishLiveBucketsChanged()
+    }
+
+    func recordScrollBumps(_ count: Int = 1, at timestamp: Date = Date()) {
+        guard count > 0 else { return }
+        let minuteStart = timestamp.startOfMinute
+        if let index = scrollBumpBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
+            scrollBumpBuckets[index].bumpCount += count
+            saveScrollBump(scrollBumpBuckets[index])
+        } else {
+            let bucket = ScrollBumpMinuteBucket(minuteStart: minuteStart, bumpCount: count)
+            scrollBumpBuckets.append(bucket)
+            scrollBumpBuckets.sort { $0.minuteStart < $1.minuteStart }
+            saveScrollBump(bucket)
+        }
+        publishLiveBucketsChanged()
+    }
+
+    /// Notify SwiftUI of live input changes, coalesced so bursty scroll/travel doesn't jank the window.
+    private func publishLiveBucketsChanged() {
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastLivePublishAt >= Self.livePublishMinInterval {
+            lastLivePublishAt = now
+            objectWillChange.send()
+            return
+        }
+        guard !livePublishScheduled else { return }
+        livePublishScheduled = true
+        let delay = Self.livePublishMinInterval - (now - lastLivePublishAt)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, delay)) { [weak self] in
+            guard let self else { return }
+            self.livePublishScheduled = false
+            self.lastLivePublishAt = CFAbsoluteTimeGetCurrent()
+            self.objectWillChange.send()
+        }
+    }
+
+    func scrollsInLastMinutes(_ minutes: Int, reference: Date = Date()) -> Int {
+        let window = max(1, minutes)
+        guard let start = Calendar.current.date(byAdding: .minute, value: -window, to: reference) else { return 0 }
+        return scrollBumpBuckets.reduce(0) { sum, bucket in
+            guard bucket.minuteStart >= start, bucket.minuteStart <= reference else { return sum }
+            return sum + bucket.bumpCount
+        }
+    }
+
+    func scrollsSinceStartOfCurrentHour(reference: Date = Date()) -> Int {
+        let calendar = Calendar.current
+        let hourStart = reference.startOfHour
+        guard let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart) else { return 0 }
+        return scrollBumpBuckets
+            .filter { $0.minuteStart >= hourStart && $0.minuteStart < hourEnd }
+            .reduce(0) { $0 + $1.bumpCount }
     }
 
     func keysSinceStartOfCurrentHour(reference: Date = Date()) -> Int {
@@ -250,75 +312,80 @@ final class HandTrackStore: ObservableObject {
         return words / elapsedMinutes
     }
 
-    /// The last `count` five-minute slots ending at the slot that contains `reference`, ordered **oldest → newest** (chart: left → right; current slot on the right).
-    func keystrokesByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [KeystrokeFiveMinuteSlot] {
-        let calendar = Calendar.current
-        let currentSlotStart = reference.startOfFiveMinuteSlot
-
-        var slots: [KeystrokeFiveMinuteSlot] = []
-        slots.reserveCapacity(count)
-
-        for i in 0..<count {
-            let minutesBack = 5 * (count - 1 - i)
-            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
-            guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
-
+    func keystrokesByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [KeystrokeFiveMinuteSlot] {
+        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
             let keyCount = keystrokeBuckets.reduce(0) { sum, bucket in
                 guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
                 return sum + bucket.keyCount
             }
-
-            slots.append(KeystrokeFiveMinuteSlot(slotStart: slotStart, keyCount: keyCount))
+            return KeystrokeFiveMinuteSlot(slotStart: slotStart, keyCount: keyCount, durationMinutes: duration)
         }
-
-        return slots
     }
 
-    /// Same windowing as keystrokes—sums per-minute clicks into trailing five-minute slots.
-    func mouseClicksByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [MouseClickFiveMinuteSlot] {
-        let calendar = Calendar.current
-        let currentSlotStart = reference.startOfFiveMinuteSlot
-
-        var slots: [MouseClickFiveMinuteSlot] = []
-        slots.reserveCapacity(count)
-
-        for i in 0..<count {
-            let minutesBack = 5 * (count - 1 - i)
-            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
-            guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
-
+    func mouseClicksByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [MouseClickFiveMinuteSlot] {
+        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
             let clickCount = mouseClickBuckets.reduce(0) { sum, bucket in
                 guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
                 return sum + bucket.clickCount
             }
-
-            slots.append(MouseClickFiveMinuteSlot(slotStart: slotStart, clickCount: clickCount))
+            return MouseClickFiveMinuteSlot(slotStart: slotStart, clickCount: clickCount, durationMinutes: duration)
         }
-
-        return slots
     }
 
-    /// Same trailing window; sums per-minute pixel travel into five-minute slots.
-    func mouseTravelByFiveMinuteSlotsTrailing(reference: Date = Date(), count: Int = 12) -> [MouseTravelFiveMinuteSlot] {
-        let calendar = Calendar.current
-        let currentSlotStart = reference.startOfFiveMinuteSlot
-
-        var slots: [MouseTravelFiveMinuteSlot] = []
-        slots.reserveCapacity(count)
-
-        for i in 0..<count {
-            let minutesBack = 5 * (count - 1 - i)
-            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart) else { continue }
-            guard let slotEnd = calendar.date(byAdding: .minute, value: 5, to: slotStart) else { continue }
-
+    func mouseTravelByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [MouseTravelFiveMinuteSlot] {
+        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
             let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
                 guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
                 return sum + bucket.travelPixels
             }
-
-            slots.append(MouseTravelFiveMinuteSlot(slotStart: slotStart, travelPixels: travelPixels))
+            return MouseTravelFiveMinuteSlot(slotStart: slotStart, travelPixels: travelPixels, durationMinutes: duration)
         }
+    }
 
+    func scrollBumpsByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [ScrollBumpFiveMinuteSlot] {
+        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
+            let bumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
+                return sum + bucket.bumpCount
+            }
+            return ScrollBumpFiveMinuteSlot(slotStart: slotStart, bumpCount: bumpCount, durationMinutes: duration)
+        }
+    }
+
+    private func trailingCountSlots<Slot>(
+        reference: Date,
+        count: Int,
+        minutesPerSlot: Int,
+        makeSlot: (_ slotStart: Date, _ slotEnd: Date, _ duration: Int) -> Slot
+    ) -> [Slot] {
+        let calendar = Calendar.current
+        let duration = max(1, minutesPerSlot)
+        let currentSlotStart = duration == 5 ? reference.startOfFiveMinuteSlot : reference.startOfMinute
+        var slots: [Slot] = []
+        slots.reserveCapacity(count)
+        for i in 0..<count {
+            let minutesBack = duration * (count - 1 - i)
+            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart),
+                  let slotEnd = calendar.date(byAdding: .minute, value: duration, to: slotStart)
+            else { continue }
+            slots.append(makeSlot(slotStart, slotEnd, duration))
+        }
         return slots
     }
 
@@ -348,13 +415,18 @@ final class HandTrackStore: ObservableObject {
                 guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
                 return sum + bucket.travelPixels
             }
+            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
+                return sum + bucket.bumpCount
+            }
 
             slots.append(
                 ComputerUsageHourSlot(
                     hourStart: hourStart,
                     keystrokeCount: keystrokeCount,
                     mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels
+                    travelPixels: travelPixels,
+                    scrollBumpCount: scrollBumpCount
                 )
             )
         }
@@ -388,13 +460,18 @@ final class HandTrackStore: ObservableObject {
                 guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
                 return sum + bucket.travelPixels
             }
+            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
+                return sum + bucket.bumpCount
+            }
 
             slots.append(
                 ComputerUsageDaySlot(
                     dayStart: dayStart,
                     keystrokeCount: keystrokeCount,
                     mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels
+                    travelPixels: travelPixels,
+                    scrollBumpCount: scrollBumpCount
                 )
             )
         }
@@ -440,13 +517,18 @@ final class HandTrackStore: ObservableObject {
                 guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
                 return sum + bucket.travelPixels
             }
+            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
+                return sum + bucket.bumpCount
+            }
 
             slots.append(
                 ComputerUsageWeekSlot(
                     weekStart: weekStart,
                     keystrokeCount: keystrokeCount,
                     mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels
+                    travelPixels: travelPixels,
+                    scrollBumpCount: scrollBumpCount
                 )
             )
         }
@@ -480,13 +562,18 @@ final class HandTrackStore: ObservableObject {
                 guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
                 return sum + bucket.travelPixels
             }
+            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
+                return sum + bucket.bumpCount
+            }
 
             slots.append(
                 ComputerUsageMonthSlot(
                     monthStart: monthStart,
                     keystrokeCount: keystrokeCount,
                     mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels
+                    travelPixels: travelPixels,
+                    scrollBumpCount: scrollBumpCount
                 )
             )
         }
@@ -779,12 +866,14 @@ final class HandTrackStore: ObservableObject {
             keystrokeBuckets = try loadKeystrokeBuckets()
             mouseClickBuckets = try loadMouseClickBuckets()
             mouseTravelBuckets = try loadMouseTravelBuckets()
+            scrollBumpBuckets = try loadScrollBumpBuckets()
             try rebuildDailyPainRollupsFromHourlyLogs()
         } catch {
             hourlyLogs = []
             keystrokeBuckets = []
             mouseClickBuckets = []
             mouseTravelBuckets = []
+            scrollBumpBuckets = []
             dailyPainRollups = []
             dailyPainRollupSnapshots = [:]
             print("Failed to load HandTrack data: \(error)")
@@ -832,6 +921,13 @@ final class HandTrackStore: ObservableObject {
         CREATE TABLE IF NOT EXISTS mouse_travel_minute_buckets (
             minute_start REAL PRIMARY KEY,
             travel_pixels REAL NOT NULL
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS scroll_bump_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            bump_count INTEGER NOT NULL
         );
         """)
 
@@ -1134,6 +1230,41 @@ final class HandTrackStore: ObservableObject {
             return MouseTravelMinuteBucket(
                 minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
                 travelPixels: sqlite3_column_double(statement, 1)
+            )
+        }
+    }
+
+    private func saveScrollBump(_ bucket: ScrollBumpMinuteBucket) {
+        do {
+            try saveScrollBumpOrThrow(bucket)
+        } catch {
+            print("Failed to save scroll bump bucket: \(error)")
+        }
+    }
+
+    private func saveScrollBumpOrThrow(_ bucket: ScrollBumpMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO scroll_bump_minute_buckets (minute_start, bump_count)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 2, Int32(bucket.bumpCount))
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
+    private func loadScrollBumpBuckets() throws -> [ScrollBumpMinuteBucket] {
+        try query("""
+        SELECT minute_start, bump_count
+        FROM scroll_bump_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return ScrollBumpMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                bumpCount: Int(sqlite3_column_int(statement, 1))
             )
         }
     }

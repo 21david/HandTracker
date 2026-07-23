@@ -379,6 +379,7 @@ private struct TwelveMonthColumnContextMenuOverlay: View {
                     keystrokes: slot.keystrokeCount,
                     clicks: slot.mouseClickCount,
                     travelPixels: slot.travelPixels,
+                    scrollBumps: slot.scrollBumpCount,
                     rates: .fromUserDefaults()
                 )
                 return MacUsageBreakdownHitRegion(

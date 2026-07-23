@@ -8,65 +8,30 @@ private enum TwelveHourComfortStorage {
     static let avgKeysPerMinuteKey = "HandTrack.mac.twelveHourAvgKeysPerMinute"
     static let avgClicksPerMinuteKey = "HandTrack.mac.twelveHourAvgClicksPerMinute"
     static let avgPixelThousandsPerMinuteKey = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
+    static let avgScrollsPerMinuteKey = "HandTrack.mac.twelveHourAvgScrollsPerMinute"
 
     static let showLeftPainKey = "HandTrack.mac.twelveHourShowLeftPain"
     static let showRightPainKey = "HandTrack.mac.twelveHourShowRightPain"
 }
 
-/// Bar height denominators derive from **`2 × moderateRate × hour`** per modality ⇒ sustained one hour **at reference** across all three ≈ **`½`** the **`0 … 10`** column (`3 × nominalThird × 0.5 = 10/2`).
+/// Legacy name kept for call sites; bar heights now use ``MacEstimatedWorkloadMinutes`` ratios.
+/// Stress / overflow still keyed off sustained-hour activity caps when needed.
 private struct HourComfortCaps {
-    let keysHeightDenom: Double
-    let keysStressCap: Double
-    let keysStressExcess: Double
-
-    let clicksHeightDenom: Double
-    let clicksStressCap: Double
-    let clicksStressExcess: Double
-
-    let travelHeightDenom: Double
-    let travelStressCap: Double
-    let travelStressExcess: Double
+    let rates: MacEstimatedWorkloadMinutes.Rates
 
     static func fromModerateMinuteAverages(
         keysPerMinute: Int,
         clicksPerMinute: Int,
-        pixelThousandsPerMinute: Int
+        pixelThousandsPerMinute: Int,
+        scrollsPerMinute: Int
     ) -> HourComfortCaps {
-        let rawKeys = max(0, keysPerMinute)
-        let kpm = Double((rawKeys / 5) * 5)
-        let cpm = Double(max(0, clicksPerMinute))
-        let thousands = max(1, pixelThousandsPerMinute)
-        let ppm = Double(thousands) * 1000
-
-        func heightDenom(_ rate: Double) -> Double {
-            guard rate.isFinite else { return .infinity }
-            return rate > 1e-9 ? rate * 120 : .infinity
-        }
-
-        func stressCapHour(_ rate: Double) -> Double {
-            guard rate.isFinite else { return 1 }
-            return rate > 1e-9 ? rate * 60 : 1
-        }
-
-        func stressExcessHour(_ nominalHourCap: Double) -> Double {
-            guard nominalHourCap.isFinite, nominalHourCap > 1 else { return 80 }
-            return max(90, nominalHourCap * 0.22)
-        }
-
-        let kNom = stressCapHour(kpm)
-        let cNom = stressCapHour(cpm)
-        let tNom = stressCapHour(ppm)
-
-        return HourComfortCaps(
-            keysHeightDenom: heightDenom(kpm),
-            keysStressCap: kNom,
-            keysStressExcess: stressExcessHour(kNom),
-            clicksHeightDenom: heightDenom(cpm),
-            clicksStressCap: cNom,
-            clicksStressExcess: stressExcessHour(cNom),
-            travelHeightDenom: heightDenom(ppm),
-            travelStressCap: tNom,
-            travelStressExcess: max(450_000, tNom * 0.28)
+        HourComfortCaps(
+            rates: .from(
+                keysPerMinute: keysPerMinute,
+                clicksPerMinute: clicksPerMinute,
+                pixelThousandsPerMinute: pixelThousandsPerMinute,
+                scrollsPerMinute: scrollsPerMinute
+            )
         )
     }
 }
@@ -74,8 +39,6 @@ private struct HourComfortCaps {
 private enum TwelveHourCombinedChart {
     /// Same numeric domain as twelve‑day pain / usage (`0 … 10`).
     static let chartUsageAxisMax = 10.0
-    /// Each modality’s *claim*: `fraction × nominalThird`; three fractions at 1 fills the column at scale 1 without squeeze.
-    static let usageBandThird = chartUsageAxisMax / 3.0
 
     static let xSlotGap = 0.04
 
@@ -83,6 +46,12 @@ private enum TwelveHourCombinedChart {
 
     /// Plot `chartY 0 … 10` ↔ **`0 … 60`** reference minutes labeled on leading axis (**6 min per 1 Y**, ticks every 2 Y → **12 min** steps).
     static let leadingMinutesPerPlotYUnit = 6.0
+
+    /// Visual height caps at 60 estimated minutes; anything above gets an overflow hat.
+    static var cappedWorkloadMinutes: Double { chartUsageAxisMax * leadingMinutesPerPlotYUnit }
+
+    /// Thin cap drawn at the top when estimated minutes exceed 60.
+    static let overflowHatHeight = 0.35
 
     static let axisBaseline = Color(.sRGB, white: 0.55, opacity: 1.0)
 
@@ -101,12 +70,17 @@ private enum StackHourMetric: Hashable {
     case keystrokes(Int)
     case mouseClicks(Int)
     case travel(Double)
+    case scrollBumps(Int)
+    /// Thin top marker when estimated workload exceeds the 60‑minute axis.
+    case overflowHat
 
     var gradientKind: MacFiveMinuteBarStyle.StackedHourInputKind {
         switch self {
         case .keystrokes: return .keystrokes
         case .mouseClicks: return .mouseClicks
         case .travel: return .pixelTravel
+        case .scrollBumps: return .scrollBumps
+        case .overflowHat: return .keystrokes
         }
     }
 
@@ -119,6 +93,10 @@ private enum StackHourMetric: Hashable {
             return "\(Self.siInteger(n)) clicks"
         case .travel(let px):
             return "\(Self.siTravelPixels(px)) px traveled"
+        case .scrollBumps(let n):
+            return "\(Self.siInteger(n)) scrolls"
+        case .overflowHat:
+            return ""
         }
     }
 
@@ -134,6 +112,10 @@ private enum StackHourMetric: Hashable {
             return "\(bucket): \(Self.siInteger(n)) clicks"
         case .travel(let px):
             return "\(bucket): \(Self.siTravelPixels(px)) px traveled"
+        case .scrollBumps(let n):
+            return "\(bucket): \(Self.siInteger(n)) scrolls"
+        case .overflowHat:
+            return "\(bucket): over 60m estimated work"
         }
     }
 
@@ -179,6 +161,8 @@ private struct HourStackLayer: Identifiable {
         case .keystrokes: return "k"
         case .mouseClicks: return "c"
         case .travel: return "t"
+        case .scrollBumps: return "s"
+        case .overflowHat: return "o"
         }
     }
 }
@@ -254,77 +238,70 @@ private struct HourPainSample: Identifiable {
     }
 }
 
+/// Bar height = estimated workload minutes on the leading axis (`0…60m` ↔ plot `0…10`).
+/// Segments are proportional to each modality’s minutes; totals over 60m cap at the top + overflow hat.
 private func buildStackLayers(slots: [ComputerUsageHourSlot], caps: HourComfortCaps) -> [HourStackLayer] {
-    let band = TwelveHourCombinedChart.usageBandThird
-    let maxComposite = TwelveHourCombinedChart.chartUsageAxisMax
+    let rates = caps.rates
+    let minutesPerY = TwelveHourCombinedChart.leadingMinutesPerPlotYUnit
+    let capMinutes = TwelveHourCombinedChart.cappedWorkloadMinutes
+    let maxY = TwelveHourCombinedChart.chartUsageAxisMax
     var rows: [HourStackLayer] = []
 
+    func modalityMinutes(amount: Double, perMinute: Double) -> Double {
+        guard amount.isFinite, amount > 0, perMinute.isFinite, perMinute > 1e-9 else { return 0 }
+        return amount / perMinute
+    }
+
     for (i, slot) in slots.enumerated() {
-        let fracKeys = caps.keysHeightDenom.isFinite && caps.keysHeightDenom > 1e-9
-            ? max(0, Double(slot.keystrokeCount) / caps.keysHeightDenom) : 0
-        let fracClicks = caps.clicksHeightDenom.isFinite && caps.clicksHeightDenom > 1e-9
-            ? max(0, Double(slot.mouseClickCount) / caps.clicksHeightDenom) : 0
-        let fracTravel = caps.travelHeightDenom.isFinite && caps.travelHeightDenom > 1e-9
-            ? max(0, slot.travelPixels / caps.travelHeightDenom) : 0
+        let keyM = modalityMinutes(amount: Double(slot.keystrokeCount), perMinute: rates.keysPerMinute)
+        let clickM = modalityMinutes(amount: Double(slot.mouseClickCount), perMinute: rates.clicksPerMinute)
+        let travelM = modalityMinutes(amount: slot.travelPixels, perMinute: rates.pixelsPerMinute)
+        let scrollM = modalityMinutes(amount: Double(slot.scrollBumpCount), perMinute: rates.scrollsPerMinute)
 
-        let baseKeys = band * fracKeys
-        let baseClicks = band * fracClicks
-        let baseTravel = band * fracTravel
-        let sumBase = baseKeys + baseClicks + baseTravel
+        // Stack bottom → top: pointer travel → scrolls → clicks → keys.
+        let parts: [(StackHourMetric, Double)] = [
+            (.travel(slot.travelPixels), travelM),
+            (.scrollBumps(slot.scrollBumpCount), scrollM),
+            (.mouseClicks(slot.mouseClickCount), clickM),
+            (.keystrokes(slot.keystrokeCount), keyM),
+        ].filter { $0.1 > 1e-9 }
 
-        guard sumBase > 1e-6 else { continue }
+        let totalMinutes = parts.reduce(0.0) { $0 + $1.1 }
+        guard totalMinutes > 1e-9 else { continue }
 
-        let squeeze = sumBase <= maxComposite ? 1.0 : maxComposite / sumBase
-        let hKeys = baseKeys * squeeze
-        let hClicks = baseClicks * squeeze
-        let hTravel = baseTravel * squeeze
+        let overflowed = totalMinutes > capMinutes + 1e-9
+        let displayMinutes = min(totalMinutes, capMinutes)
+        let minuteScale = displayMinutes / totalMinutes
+        let overflowStress = overflowed
+            ? min(max((totalMinutes - capMinutes) / 30.0, 0.35), 1.0)
+            : 0.0
 
-        let sKeys = MacFiveMinuteBarStyle.stressAmount(
-            from: Double(slot.keystrokeCount),
-            cap: caps.keysStressCap,
-            excessWidth: caps.keysStressExcess
-        )
-        let sClicks = MacFiveMinuteBarStyle.stressAmount(
-            from: Double(slot.mouseClickCount),
-            cap: caps.clicksStressCap,
-            excessWidth: caps.clicksStressExcess
-        )
-        let sTravel = MacFiveMinuteBarStyle.stressAmount(
-            from: slot.travelPixels,
-            cap: caps.travelStressCap,
-            excessWidth: caps.travelStressExcess
-        )
-
-        // Stack bottom → top: pointer travel → clicks → keys (same order as twelve‑day chart).
         var yCursor = 0.0
+        for (metric, minutes) in parts {
+            let h = (minutes * minuteScale) / minutesPerY
+            guard h > 0.000_1 else { continue }
+            let top = min(yCursor + h, maxY)
+            rows.append(HourStackLayer(
+                plotIndex: i,
+                metric: metric,
+                yLow: yCursor,
+                yHigh: top,
+                stress: overflowStress
+            ))
+            yCursor = top
+            if yCursor >= maxY - 1e-9 { break }
+        }
 
-        if hTravel > 0.000_1 {
+        if overflowed {
+            let hat = TwelveHourCombinedChart.overflowHatHeight
+            let yHigh = maxY
+            let yLow = max(0, maxY - hat)
             rows.append(HourStackLayer(
                 plotIndex: i,
-                metric: .travel(slot.travelPixels),
-                yLow: yCursor,
-                yHigh: yCursor + hTravel,
-                stress: sTravel
-            ))
-            yCursor += hTravel
-        }
-        if hClicks > 0.000_1 {
-            rows.append(HourStackLayer(
-                plotIndex: i,
-                metric: .mouseClicks(slot.mouseClickCount),
-                yLow: yCursor,
-                yHigh: yCursor + hClicks,
-                stress: sClicks
-            ))
-            yCursor += hClicks
-        }
-        if hKeys > 0.000_1 {
-            rows.append(HourStackLayer(
-                plotIndex: i,
-                metric: .keystrokes(slot.keystrokeCount),
-                yLow: yCursor,
-                yHigh: yCursor + hKeys,
-                stress: sKeys
+                metric: .overflowHat,
+                yLow: yLow,
+                yHigh: yHigh,
+                stress: 1.0
             ))
         }
     }
@@ -392,6 +369,7 @@ private func twelveHourEstimatedMinutesLabel(slot: ComputerUsageHourSlot) -> Str
         keystrokes: slot.keystrokeCount,
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
+        scrollBumps: slot.scrollBumpCount,
         rates: rates
     )
     return MacEstimatedWorkloadMinutes.compactDurationLabel(totalMinutes: total)
@@ -433,6 +411,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
     @Binding var keysPerMinute: Int
     @Binding var clicksPerMinute: Int
     @Binding var pixelThousandsPerMinute: Int
+    @Binding var scrollsPerMinute: Int
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -442,7 +421,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
                 .foregroundStyle(Color(nsColor: .labelColor))
 
             Text(
-                "Used to convert raw keys / clicks / pointer travel into estimated minutes (count ÷ rate). Also scales bar heights."
+                "Used to convert raw keys / clicks / scrolls / pointer travel into estimated minutes (count ÷ rate). Also scales bar heights."
             )
             .font(.caption2)
             .foregroundStyle(Color(nsColor: .secondaryLabelColor))
@@ -481,6 +460,17 @@ private struct TwelveHourComfortCalibrationPopover: View {
                     .foregroundStyle(Color(nsColor: .labelColor))
             }
 
+            minuteRow(title: "Scrolls / min") {
+                Stepper("", value: $scrollsPerMinute, in: Self.scrollsRange, step: 1)
+                    .labelsHidden()
+                    .accessibilityLabel(Text("Average scroll bumps per minute"))
+                Text("\(scrollsPerMinute)")
+                    .font(.body)
+                    .monospacedDigit()
+                    .frame(minWidth: 44, alignment: .trailing)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+            }
+
             HStack {
                 Spacer(minLength: 0)
                 Button("Done") { dismiss() }
@@ -509,6 +499,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
     private static let keysRange = 0...800
     private static let clicksRange = 0...360
     private static let pxKRange = 1...500
+    private static let scrollsRange = 1...300
 
     private static let popoverReadableWidth: CGFloat = 312
 }
@@ -519,6 +510,7 @@ private func twelveHourColumnUsageMinutes(slot: ComputerUsageHourSlot) -> (keybo
         keystrokes: slot.keystrokeCount,
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
+        scrollBumps: slot.scrollBumpCount,
         rates: .fromUserDefaults()
     )
 }
@@ -533,7 +525,7 @@ private struct TwelveHourColumnContextMenuOverlay: View {
             let plotBounds = geometry[plotFrameAnchor]
             let gap = TwelveHourCombinedChart.xSlotGap
             let regions = Array(slots.enumerated()).compactMap { idx, slot -> MacUsageBreakdownHitRegion? in
-                guard slot.keystrokeCount > 0 || slot.mouseClickCount > 0 || slot.travelPixels > 0 else {
+                guard slot.keystrokeCount > 0 || slot.mouseClickCount > 0 || slot.travelPixels > 0 || slot.scrollBumpCount > 0 else {
                     return nil
                 }
                 let centerXData = Double(idx) + 0.5
@@ -759,7 +751,9 @@ private struct TwelveHourUsageChartPanel: View {
                 .fill(.clear)
                 .contentShape(Rectangle())
                 .help(layer.metric.tooltipText(plotIndex: layer.plotIndex, slots: slots))
-            if stackSegmentShowsInteriorLabel(yLow: layer.yLow, yHigh: layer.yHigh) {
+            if case .overflowHat = layer.metric {
+                EmptyView()
+            } else if stackSegmentShowsInteriorLabel(yLow: layer.yLow, yHigh: layer.yHigh) {
                 Text(layer.metric.interiorCaption)
                     .font(.caption2.weight(.semibold))
                     .monospacedDigit()
@@ -845,6 +839,9 @@ struct MacTwelveHourStackedUsagePainChart: View {
     @AppStorage(TwelveHourComfortStorage.avgPixelThousandsPerMinuteKey)
     private var avgPixelThousandsPerMinute = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
 
+    @AppStorage(TwelveHourComfortStorage.avgScrollsPerMinuteKey)
+    private var avgScrollsPerMinute = MacEstimatedWorkloadMinutes.defaultScrollsPerMinute
+
     @State private var showComfortCalibration = false
 
     @AppStorage(TwelveHourComfortStorage.showLeftPainKey) private var showLeftPain = true
@@ -861,24 +858,65 @@ struct MacTwelveHourStackedUsagePainChart: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { timeline in
-            chartContent(referenceDate: timeline.date)
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            MacTwelveHourStackedUsagePainChartFrame(
+                store: store,
+                referenceDate: timeline.date,
+                refreshBucket: MacChartEquatableBucket.stackedChartClockBucket(timeline.date),
+                painRevision: MacChartEquatableBucket.painLogsRevision(store),
+                capsFingerprint: capsFingerprint,
+                painVisibility: TwelveHourPainVisibility(showLeft: showLeftPain, showRight: showRightPain),
+                showComfortCalibration: $showComfortCalibration,
+                avgKeysPerMinute: $avgKeysPerMinute,
+                avgClicksPerMinute: $avgClicksPerMinute,
+                avgPixelThousandsPerMinute: $avgPixelThousandsPerMinute,
+                avgScrollsPerMinute: $avgScrollsPerMinute,
+                painVisibilityBinding: painVisibilityBinding
+            )
+            .equatable()
         }
     }
 
-    @ViewBuilder
-    @MainActor
-    private func chartContent(referenceDate: Date) -> some View {
-        let _ = MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
+    private var capsFingerprint: Int {
+        var hasher = Hasher()
+        hasher.combine(avgKeysPerMinute)
+        hasher.combine(avgClicksPerMinute)
+        hasher.combine(avgPixelThousandsPerMinute)
+        hasher.combine(avgScrollsPerMinute)
+        return hasher.finalize()
+    }
+}
+
+/// Skips rebuilding the heavy 12‑hour chart when only live key/click/scroll counters change.
+private struct MacTwelveHourStackedUsagePainChartFrame: View, Equatable {
+    let store: HandTrackStore
+    let referenceDate: Date
+    let refreshBucket: Int
+    let painRevision: UInt64
+    let capsFingerprint: Int
+    let painVisibility: TwelveHourPainVisibility
+    @Binding var showComfortCalibration: Bool
+    @Binding var avgKeysPerMinute: Int
+    @Binding var avgClicksPerMinute: Int
+    @Binding var avgPixelThousandsPerMinute: Int
+    @Binding var avgScrollsPerMinute: Int
+    var painVisibilityBinding: Binding<TwelveHourPainVisibility>
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.refreshBucket == rhs.refreshBucket
+            && lhs.painRevision == rhs.painRevision
+            && lhs.capsFingerprint == rhs.capsFingerprint
+            && lhs.painVisibility == rhs.painVisibility
+    }
+
+    var body: some View {
         let caps = HourComfortCaps.fromModerateMinuteAverages(
             keysPerMinute: avgKeysPerMinute,
             clicksPerMinute: avgClicksPerMinute,
-            pixelThousandsPerMinute: avgPixelThousandsPerMinute
+            pixelThousandsPerMinute: avgPixelThousandsPerMinute,
+            scrollsPerMinute: avgScrollsPerMinute
         )
-        // Pass store.hourlyLogs to ensure the view re-renders when logs change
-        let _ = store.hourlyLogs
         let prepared = TwelveHourUsagePrepared(store: store, referenceDate: referenceDate, comfortCaps: caps)
-        let painVisibility = TwelveHourPainVisibility(showLeft: showLeftPain, showRight: showRightPain)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("Past 12 hours")
@@ -903,7 +941,8 @@ struct MacTwelveHourStackedUsagePainChart: View {
                     TwelveHourComfortCalibrationPopover(
                         keysPerMinute: $avgKeysPerMinute,
                         clicksPerMinute: $avgClicksPerMinute,
-                        pixelThousandsPerMinute: $avgPixelThousandsPerMinute
+                        pixelThousandsPerMinute: $avgPixelThousandsPerMinute,
+                        scrollsPerMinute: $avgScrollsPerMinute
                     )
                 }
             }

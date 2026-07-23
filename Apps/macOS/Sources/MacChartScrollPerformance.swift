@@ -41,6 +41,15 @@ enum MacChartEquatableBucket {
         )
     }
 
+    @MainActor
+    static func scrollBumpRevision(_ store: HandTrackStore) -> Int {
+        metricRevision(
+            bucketCount: store.scrollBumpBuckets.count,
+            minuteStart: store.scrollBumpBuckets.last?.minuteStart,
+            value: Double(store.scrollBumpBuckets.last?.bumpCount ?? 0)
+        )
+    }
+
     private static func metricRevision(bucketCount: Int, minuteStart: Date?, value: Double) -> Int {
         var hasher = Hasher()
         hasher.combine(bucketCount)
@@ -53,5 +62,10 @@ enum MacChartEquatableBucket {
     @MainActor
     static func painLogsRevision(_ store: HandTrackStore) -> UInt64 {
         UInt64(store.hourlyLogs.count) &* 1_000_003 &+ UInt64(store.dailyPainRollups.count)
+    }
+
+    /// Heavy stacked charts: refresh on the clock / pain sync / settings — not every live input.
+    static func stackedChartClockBucket(_ date: Date) -> Int {
+        Int(date.timeIntervalSince1970 / 30.0)
     }
 }

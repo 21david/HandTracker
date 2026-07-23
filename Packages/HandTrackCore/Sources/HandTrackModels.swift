@@ -111,27 +111,30 @@ struct KeystrokeMinuteBucket: Identifiable, Codable, Hashable {
     var id: Date { minuteStart }
 }
 
-/// One five-minute span aligned to real clock boundaries (:00, :05, …).
+/// One clock-aligned usage span (typically 1 or 5 minutes) for live histograms.
 struct KeystrokeFiveMinuteSlot: Identifiable, Hashable {
     var slotStart: Date
     var keyCount: Int
+    /// Bar width in minutes (5 for classic charts, 1 for one-minute mode).
+    var durationMinutes: Int = 5
 
     var id: Date { slotStart }
 
     var slotEnd: Date {
-        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
     }
 }
 
-/// Mouse click counts summed into the same clock-aligned five-minute windows as keystrokes.
+/// Mouse click counts summed into the same clock-aligned windows as keystrokes.
 struct MouseClickFiveMinuteSlot: Identifiable, Hashable {
     var slotStart: Date
     var clickCount: Int
+    var durationMinutes: Int = 5
 
     var id: Date { slotStart }
 
     var slotEnd: Date {
-        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
     }
 }
 
@@ -154,11 +157,32 @@ struct MouseTravelMinuteBucket: Identifiable, Codable, Hashable {
 struct MouseTravelFiveMinuteSlot: Identifiable, Hashable {
     var slotStart: Date
     var travelPixels: Double
+    var durationMinutes: Int = 5
 
     var id: Date { slotStart }
 
     var slotEnd: Date {
-        Calendar.current.date(byAdding: .minute, value: 5, to: slotStart) ?? slotStart
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
+    }
+}
+
+/// Discrete mouse-wheel / scroll “bumps” (notches) per calendar minute.
+struct ScrollBumpMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var bumpCount: Int
+
+    var id: Date { minuteStart }
+}
+
+struct ScrollBumpFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var bumpCount: Int
+    var durationMinutes: Int = 5
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
     }
 }
 
@@ -168,6 +192,7 @@ struct ComputerUsageHourSlot: Identifiable, Hashable {
     var keystrokeCount: Int
     var mouseClickCount: Int
     var travelPixels: Double
+    var scrollBumpCount: Int = 0
 
     var id: Date { hourStart }
 }
@@ -179,6 +204,7 @@ struct ComputerUsageDaySlot: Identifiable, Hashable {
     var keystrokeCount: Int
     var mouseClickCount: Int
     var travelPixels: Double
+    var scrollBumpCount: Int = 0
 
     var id: Date { dayStart }
 }
@@ -189,6 +215,7 @@ struct ComputerUsageWeekSlot: Identifiable, Hashable {
     var keystrokeCount: Int
     var mouseClickCount: Int
     var travelPixels: Double
+    var scrollBumpCount: Int = 0
 
     var id: Date { weekStart }
 }
@@ -199,6 +226,7 @@ struct ComputerUsageMonthSlot: Identifiable, Hashable {
     var keystrokeCount: Int
     var mouseClickCount: Int
     var travelPixels: Double
+    var scrollBumpCount: Int = 0
 
     var id: Date { monthStart }
 }

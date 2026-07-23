@@ -1,13 +1,13 @@
 import Charts
 import SwiftUI
 
-private enum LiveMouseTravelChart {
-    static let fiveMinuteCap: Double = 125_000
-    static let fiveMinuteExcess: Double = 37_500
+private enum LiveScrollBumpChart {
+    static let fiveMinuteCap: Double = 200
+    static let fiveMinuteExcess: Double = 40
     static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
-struct MacMouseTravelFiveMinuteChart: View {
+struct MacScrollBumpFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
     @AppStorage(MacLiveUsageBucketResolution.storageKey)
     private var resolutionRaw = MacLiveUsageBucketResolution.fiveMinutes.rawValue
@@ -20,9 +20,9 @@ struct MacMouseTravelFiveMinuteChart: View {
     }
 
     var body: some View {
-        let liveRevision = MacChartEquatableBucket.mouseTravelRevision(store)
+        let liveRevision = MacChartEquatableBucket.scrollBumpRevision(store)
         TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            MacMouseTravelFiveMinuteChartRender(
+            MacScrollBumpFiveMinuteChartRender(
                 store: store,
                 referenceDate: timeline.date,
                 refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date),
@@ -35,18 +35,18 @@ struct MacMouseTravelFiveMinuteChart: View {
     }
 }
 
-private struct MacMouseTravelFiveMinuteChartRender: View, Equatable {
+private struct MacScrollBumpFiveMinuteChartRender: View, Equatable {
     let store: HandTrackStore
     let referenceDate: Date
     let refreshBucket: Int
     let liveRevision: Int
     let resolution: MacLiveUsageBucketResolution
 
-    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveMouseTravelChart.fiveMinuteCap) }
-    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveMouseTravelChart.fiveMinuteExcess) }
+    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveScrollBumpChart.fiveMinuteCap) }
+    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveScrollBumpChart.fiveMinuteExcess) }
 
     var body: some View {
-        let slots = store.mouseTravelByFiveMinuteSlotsTrailing(
+        let slots = store.scrollBumpsByFiveMinuteSlotsTrailing(
             reference: referenceDate,
             count: resolution.barCount,
             minutesPerSlot: resolution.minutesPerBar
@@ -55,24 +55,24 @@ private struct MacMouseTravelFiveMinuteChartRender: View, Equatable {
 
         Chart {
             RuleMark(y: .value("Baseline", 0.0))
-                .foregroundStyle(LiveMouseTravelChart.axisLineColor)
+                .foregroundStyle(LiveScrollBumpChart.axisLineColor)
                 .lineStyle(StrokeStyle(lineWidth: 1))
             ForEach(Array(slots.enumerated().compactMap { index, slot -> Plotted? in
-                guard slot.travelPixels > 0 else { return nil }
-                return Plotted(index: index, pixels: slot.travelPixels)
+                guard slot.bumpCount > 0 else { return nil }
+                return Plotted(index: index, count: slot.bumpCount)
             })) { plotted in
                 let gap: Double = resolution == .oneMinute ? 0.08 : 0.04
                 RectangleMark(
                     xStart: .value("Start", Double(plotted.index) + gap),
                     xEnd: .value("End", Double(plotted.index + 1) - gap),
                     yStart: .value("Bottom", 0.0),
-                    yEnd: .value("Top", min(plotted.pixels, cap))
+                    yEnd: .value("Top", min(Double(plotted.count), cap))
                 )
                 .foregroundStyle(
                     MacFiveMinuteBarStyle.stackedHourBandGradient(
-                        metric: .pixelTravel,
+                        metric: .scrollBumps,
                         stressAmount: MacFiveMinuteBarStyle.stressAmount(
-                            from: plotted.pixels,
+                            from: Double(plotted.count),
                             cap: cap,
                             excessWidth: excess
                         )
@@ -80,7 +80,7 @@ private struct MacMouseTravelFiveMinuteChartRender: View, Equatable {
                 )
                 .cornerRadius(resolution == .oneMinute ? 2 : 4, style: .continuous)
                 .annotation(position: .top, alignment: .center, spacing: 5) {
-                    Text(Self.compactPixels(plotted.pixels))
+                    Text("\(plotted.count)")
                         .font(resolution == .oneMinute ? .system(size: 8) : .caption2)
                         .foregroundStyle(.secondary)
                         .minimumScaleFactor(0.5)
@@ -94,22 +94,22 @@ private struct MacMouseTravelFiveMinuteChartRender: View, Equatable {
             let labelEvery = resolution == .oneMinute ? 10 : 1
             AxisMarks(preset: .aligned, values: boundaries) { value in
                 AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
-                    .foregroundStyle(LiveMouseTravelChart.axisLineColor)
+                    .foregroundStyle(LiveScrollBumpChart.axisLineColor)
                 if let idx = value.as(Int.self),
                    (idx % labelEvery == 0 || idx == slots.count),
                    let date = tickDate(idx: idx, slots: slots)
                 {
                     AxisValueLabel(centered: false) {
-                        Text(Self.axisLabelFormatter.string(from: date))
+                        Text(axisLabelFormatter.string(from: date))
                             .font(.caption2)
                             .foregroundStyle(.primary)
                     }
                 }
             }
         }
-        .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridPixelThousands() }
+        .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral() }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Pointer travel")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Scrolls")
         }
         .frame(height: 200)
         .padding(.top, 20)
@@ -123,22 +123,17 @@ private struct MacMouseTravelFiveMinuteChartRender: View, Equatable {
 
     private struct Plotted: Identifiable {
         let index: Int
-        let pixels: Double
+        let count: Int
         var id: Int { index }
     }
 
-    private func tickDate(idx: Int, slots: [MouseTravelFiveMinuteSlot]) -> Date? {
+    private func tickDate(idx: Int, slots: [ScrollBumpFiveMinuteSlot]) -> Date? {
         if idx >= 0 && idx < slots.count { return slots[idx].slotStart }
         if idx == slots.count, let last = slots.last { return last.slotEnd }
         return nil
     }
 
-    private static func compactPixels(_ p: Double) -> String {
-        if p >= 1_000_000 { return String(format: "%.1fM", p / 1_000_000) }
-        if p >= 1000 { return String(format: "%.0fk", p / 1000) }
-        return String(format: "%.0f", p)
-    }
-
+    private var axisLabelFormatter: DateFormatter { Self.axisLabelFormatter }
     private static let axisLabelFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mma"
