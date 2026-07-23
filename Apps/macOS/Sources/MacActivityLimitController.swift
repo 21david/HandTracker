@@ -23,8 +23,15 @@ struct ActiveActivityBreak: Identifiable, Equatable {
 final class MacActivityLimitController: ObservableObject {
     @Published private(set) var activeBreaks: [HandTrackActivityKind: ActiveActivityBreak] = [:]
 
+    private struct IgnoredActivityEvent {
+        let kind: HandTrackActivityKind
+        let magnitude: Double
+        let timestamp: Date
+    }
+
     private weak var store: HandTrackStore?
     private var tickTimer: Timer?
+    private var ignoredEvents: [IgnoredActivityEvent] = []
 
     func attach(store: HandTrackStore) {
         self.store = store
@@ -35,6 +42,7 @@ final class MacActivityLimitController: ObservableObject {
         tickTimer?.invalidate()
         tickTimer = nil
         activeBreaks.removeAll()
+        ignoredEvents.removeAll()
     }
 
     /// Forces a snapshot reload + recomputes remaining timers — call after the settings popover
@@ -54,16 +62,24 @@ final class MacActivityLimitController: ObservableObject {
     /// Called by the dashboard view-model from each keystroke / click / travel-batch callback.
     /// `eventMagnitude` is `1` for keys/clicks; for pointer travel pass the batched pixel count
     /// so each batch contributes its full delta to the rolling window check.
-    func registerEvent(of kind: HandTrackActivityKind, eventMagnitude: Double = 1, at now: Date = Date()) {
+    func registerEvent(
+        of kind: HandTrackActivityKind,
+        eventMagnitude: Double = 1,
+        at now: Date = Date(),
+        playSound: Bool = true
+    ) {
         let snapshot = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
         guard snapshot.masterEnabled else { return }
         let activity = perActivity(in: snapshot, for: kind)
         guard activity.enabled else { return }
+        pruneIgnoredEvents(before: now.addingTimeInterval(-Double(maximumWindowMinutes(in: snapshot)) * 60))
 
         if var existing = activeBreaks[kind] {
             existing.expiresAt = existing.expiresAt.addingTimeInterval(Double(existing.extensionSecondsPerEvent))
             activeBreaks[kind] = existing
-            playBreakSound(volumePercent: snapshot.soundVolumePercent, name: snapshot.soundName)
+            if playSound {
+                playBreakSound(volumePercent: snapshot.soundVolumePercent, name: snapshot.soundName)
+            }
             return
         }
 
@@ -78,7 +94,13 @@ final class MacActivityLimitController: ObservableObject {
             currentTotal = store.mouseTravelPixelsInLastMinutes(activity.windowMinutes, reference: now)
         }
 
-        guard activity.threshold > 0, currentTotal >= activity.threshold else { return }
+        let ignoredTotal = ignoredEvents.reduce(0.0) { sum, event in
+            let windowStart = now.addingTimeInterval(-Double(max(1, activity.windowMinutes)) * 60)
+            guard event.kind == kind, event.timestamp >= windowStart, event.timestamp <= now else { return sum }
+            return sum + event.magnitude
+        }
+        let countedTotal = max(0, currentTotal - ignoredTotal)
+        guard activity.threshold > 0, countedTotal >= activity.threshold else { return }
 
         let breakSeconds = max(1, activity.breakMinutes) * 60
         let brk = ActiveActivityBreak(
@@ -88,7 +110,23 @@ final class MacActivityLimitController: ObservableObject {
             extensionSecondsPerEvent: activity.extensionSeconds
         )
         activeBreaks[kind] = brk
-        playBreakSound(volumePercent: snapshot.soundVolumePercent, name: snapshot.soundName)
+        if playSound {
+            playBreakSound(volumePercent: snapshot.soundVolumePercent, name: snapshot.soundName)
+        }
+    }
+
+    /// Records an event that remains in normal usage history but is excluded from Activity Limits.
+    func ignoreEventDuringPause(
+        of kind: HandTrackActivityKind,
+        eventMagnitude: Double = 1,
+        at now: Date = Date()
+    ) {
+        ignoredEvents.append(IgnoredActivityEvent(kind: kind, magnitude: eventMagnitude, timestamp: now))
+    }
+
+    /// Pausing Activity Limits also dismisses any currently enforced break.
+    func clearActiveBreaksForPause() {
+        activeBreaks.removeAll()
     }
 
     // MARK: - Internals
@@ -102,6 +140,17 @@ final class MacActivityLimitController: ObservableObject {
         case .mouseClicks: return snapshot.clicks
         case .pointerTravel: return snapshot.travel
         }
+    }
+
+    private func maximumWindowMinutes(in snapshot: HandTrackActivityLimitsSnapshot) -> Int {
+        max(
+            1,
+            [snapshot.keys.windowMinutes, snapshot.clicks.windowMinutes, snapshot.travel.windowMinutes].max() ?? 1
+        )
+    }
+
+    private func pruneIgnoredEvents(before cutoff: Date) {
+        ignoredEvents.removeAll { $0.timestamp < cutoff }
     }
 
     private func startTickTimer() {

@@ -14,16 +14,26 @@ private enum FiveMinuteKeystrokeChart {
 struct MacKeystrokeFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
 
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            MacKeystrokeFiveMinuteChartRender(
+                store: store,
+                referenceDate: timeline.date,
+                refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date)
+            )
+            .equatable()
+        }
+    }
+}
+
+private struct MacKeystrokeFiveMinuteChartRender: View, Equatable {
+    let store: HandTrackStore
+    let referenceDate: Date
+    let refreshBucket: Int
+
     private let cap = FiveMinuteKeystrokeChart.comfortableKeystrokeCap
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            chartContent(referenceDate: timeline.date)
-        }
-    }
-
-    @ViewBuilder
-    private func chartContent(referenceDate: Date) -> some View {
         let slots = store.keystrokesByFiveMinuteSlotsTrailing(reference: referenceDate, count: 12)
         let boundaries = Array(0...slots.count)
 
@@ -44,6 +54,10 @@ struct MacKeystrokeFiveMinuteChart: View {
         }
         .frame(height: 200)
         .padding(.top, 20)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.refreshBucket == rhs.refreshBucket
     }
 
     /// Solid horizontal baseline at y=0, matching the x-axis tick color.

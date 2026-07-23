@@ -1,4 +1,4 @@
-name: HandTrack
+name: r
 options:
   bundleIdPrefix: com.david.handtrack
   deploymentTarget:

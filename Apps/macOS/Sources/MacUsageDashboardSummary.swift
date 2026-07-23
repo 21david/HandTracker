@@ -1,139 +1,5 @@
 import SwiftUI
 
-// MARK: - Same stack-height geometry as charts (minutes / hours derived from composite plot Y)
-
-/// Mirrors [`MacTwelveHourStackedUsagePainChart`](MacTwelveHourStackedUsagePainChart.swift) `HourComfortCaps` + `buildStackLayers` totals.
-private enum MacDashboardTwelveHourMath {
-    static let chartYAxisMax = 10.0
-    static let usageBandThird = chartYAxisMax / 3.0
-    static let leadingMinutesPerPlotYUnit = 6.0
-
-    struct ComfortCaps {
-        let keysHeightDenom: Double
-        let clicksHeightDenom: Double
-        let travelHeightDenom: Double
-
-        static func fromModerateMinuteAverages(
-            keysPerMinute: Int,
-            clicksPerMinute: Int,
-            pixelThousandsPerMinute: Int
-        ) -> ComfortCaps {
-            let rawKeys = max(0, keysPerMinute)
-            let kpm = Double((rawKeys / 5) * 5)
-            let cpm = Double(max(0, clicksPerMinute))
-            let thousands = max(1, pixelThousandsPerMinute)
-            let ppm = Double(thousands) * 1000
-
-            func heightDenom(_ rate: Double) -> Double {
-                guard rate.isFinite else { return .infinity }
-                return rate > 1e-9 ? rate * 120 : .infinity
-            }
-
-            return ComfortCaps(
-                keysHeightDenom: heightDenom(kpm),
-                clicksHeightDenom: heightDenom(cpm),
-                travelHeightDenom: heightDenom(ppm)
-            )
-        }
-    }
-
-    /// Total stacked **`chart Y`** height for one bucket (travel → clicks → keys), after squeeze toward `0…10`.
-    static func compositeStackPlotY(
-        keystrokes: Int,
-        mouseClicks: Int,
-        travelPixels: Double,
-        caps: ComfortCaps
-    ) -> Double {
-        let band = usageBandThird
-        let fracKeys = caps.keysHeightDenom.isFinite && caps.keysHeightDenom > 1e-9
-            ? max(0, Double(keystrokes) / caps.keysHeightDenom) : 0
-        let fracClicks = caps.clicksHeightDenom.isFinite && caps.clicksHeightDenom > 1e-9
-            ? max(0, Double(mouseClicks) / caps.clicksHeightDenom) : 0
-        let fracTravel = caps.travelHeightDenom.isFinite && caps.travelHeightDenom > 1e-9
-            ? max(0, travelPixels / caps.travelHeightDenom) : 0
-
-        let baseKeys = band * fracKeys
-        let baseClicks = band * fracClicks
-        let baseTravel = band * fracTravel
-        let sumBase = baseKeys + baseClicks + baseTravel
-        guard sumBase > 1e-6 else { return 0 }
-        let squeeze = sumBase <= chartYAxisMax ? 1.0 : chartYAxisMax / sumBase
-        return sumBase * squeeze
-    }
-
-    static func approximateWorkloadMinutes(totalPlotY: Double) -> Double {
-        totalPlotY * leadingMinutesPerPlotYUnit
-    }
-}
-
-/// Mirrors [`TwelveDayCombinedChart`](MacTwelveDayStackedUsagePainChart.swift) + `buildDayStackLayers` totals.
-private enum MacDashboardTwelveDayMath {
-
-    private static let typicalWorkHours = 3.0
-    private static let scaleFactor = 12.0 * typicalWorkHours
-    private static let usageCapEase = 3.0 / 5.0
-
-    private static let keystrokesDayCap = 275.0 * scaleFactor * usageCapEase
-    private static let clicksDayCap = 120.0 * scaleFactor * usageCapEase
-    private static let travelDayCap = 125_000.0 * scaleFactor * usageCapEase
-
-    private static let usageBandThird = 10.0 / 3.0
-    private static let chartYAxisMax = 10.0
-
-    struct DayBarsVisibility {
-        var showKeys: Bool
-        var showClicks: Bool
-        var showTravel: Bool
-    }
-
-    private static func dayCappedFraction(_ value: Double, cap: Double) -> Double {
-        guard cap > 0 else { return 0 }
-        return min(1, value / cap)
-    }
-
-    /// Total stacked **`chart Y`** for the current hand-tracking day bar (respects twelve‑day “Usage bars” toggles).
-    static func compositeStackPlotY(slot: ComputerUsageDaySlot, vis: DayBarsVisibility) -> Double {
-        guard vis.showKeys || vis.showClicks || vis.showTravel else { return 0 }
-
-        let bandSlice = usageBandThird
-        let keysFrac = dayCappedFraction(Double(slot.keystrokeCount), cap: keystrokesDayCap)
-        let clickFrac = dayCappedFraction(Double(slot.mouseClickCount), cap: clicksDayCap)
-        let travelFrac = dayCappedFraction(slot.travelPixels, cap: travelDayCap)
-
-        struct Stage {
-            var unscaled: Double
-        }
-        var stages: [Stage] = []
-        if vis.showTravel {
-            let h = travelFrac * bandSlice
-            if h > 1e-4 { stages.append(Stage(unscaled: h)) }
-        }
-        if vis.showClicks {
-            let h = clickFrac * bandSlice
-            if h > 1e-4 { stages.append(Stage(unscaled: h)) }
-        }
-        if vis.showKeys {
-            let h = keysFrac * bandSlice
-            if h > 1e-4 { stages.append(Stage(unscaled: h)) }
-        }
-        guard !stages.isEmpty else { return 0 }
-
-        let sumUnscaled = stages.reduce(0.0) { $0 + $1.unscaled }
-        guard sumUnscaled > 0 else { return 0 }
-        let squeeze = sumUnscaled <= chartYAxisMax ? 1.0 : chartYAxisMax / sumUnscaled
-        var yCursor = 0.0
-        for s in stages {
-            yCursor += s.unscaled * squeeze
-        }
-        return yCursor
-    }
-
-    /// Same ladder as **`twelveDayLeadingUsageHoursTickLabel`**: `chartY / 2` → hours (`0…10 Y ↔ 0…5 h`).
-    static func approximateWorkloadHours(totalPlotY: Double) -> Double {
-        totalPlotY / 2.0
-    }
-}
-
 private enum MacDashFormat {
 
     static func integers(_ value: Int) -> String {
@@ -223,25 +89,19 @@ private struct DashValueTile: View {
     }
 }
 
-/// Compact hour / today strips; workload chips match twelve‑hour (minutes ladder) & twelve‑day (hours ladder) charts.
+/// Compact hour / today strips; estimated time uses the same count÷rate math as the stacked charts.
 struct MacUsageDashboardSummary: View {
 
     private enum ComfortKeys {
         static let keysPM = "HandTrack.mac.twelveHourAvgKeysPerMinute"
         static let clicksPM = "HandTrack.mac.twelveHourAvgClicksPerMinute"
         static let pxK = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
-        static let dayShowKeys = "HandTrack.mac.twelveDayChartShowKeys"
-        static let dayShowClicks = "HandTrack.mac.twelveDayChartShowClicks"
-        static let dayShowTravel = "HandTrack.mac.twelveDayChartShowPointerTravel"
     }
 
     @EnvironmentObject private var store: HandTrackStore
-    @AppStorage(ComfortKeys.keysPM) private var avgKeysPM = 15
-    @AppStorage(ComfortKeys.clicksPM) private var avgClicksPM = 5
-    @AppStorage(ComfortKeys.pxK) private var avgPixelThousandsPM = 7
-    @AppStorage(ComfortKeys.dayShowKeys) private var dayShowKeys = true
-    @AppStorage(ComfortKeys.dayShowClicks) private var dayShowClicks = true
-    @AppStorage(ComfortKeys.dayShowTravel) private var dayShowTravel = true
+    @AppStorage(ComfortKeys.keysPM) private var avgKeysPM = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
+    @AppStorage(ComfortKeys.clicksPM) private var avgClicksPM = MacEstimatedWorkloadMinutes.defaultClicksPerMinute
+    @AppStorage(ComfortKeys.pxK) private var avgPixelThousandsPM = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
     @AppStorage(HandTrackActivityLimitsStorage.dashboardRollingWindowMinutesKey)
     private var rollingWindowMinutes = HandTrackActivityLimitsStorage.Defaults.dashboardRollingWindowMinutes
 
@@ -315,22 +175,23 @@ struct MacUsageDashboardSummary: View {
         store.mouseTravelPixelsInLastMinutes(rollingWindowMinutes, reference: now)
     }
 
-    private var rollingPlotY: Double {
-        MacDashboardTwelveHourMath.compositeStackPlotY(
-            keystrokes: rollingKeys,
-            mouseClicks: rollingClicks,
-            travelPixels: rollingTravel,
-            caps: twelveHourCaps
+    private var workloadRates: MacEstimatedWorkloadMinutes.Rates {
+        MacEstimatedWorkloadMinutes.Rates.from(
+            keysPerMinute: avgKeysPM,
+            clicksPerMinute: avgClicksPM,
+            pixelThousandsPerMinute: avgPixelThousandsPM
         )
     }
 
-    /// Minutes value scales linearly with the rolling window vs. one full hour for accurate
-    /// "estimated minutes" — without this scaling a 10-minute window would otherwise present
-    /// itself as up to an hour's worth of work.
     private var rollingWorkloadMinutes: Double {
-        let scale = Double(rollingWindowMinutes) / 60.0
-        let hourBudget = MacDashboardTwelveHourMath.approximateWorkloadMinutes(totalPlotY: rollingPlotY)
-        return hourBudget * scale
+        Double(
+            MacEstimatedWorkloadMinutes.totalMinutes(
+                keystrokes: rollingKeys,
+                clicks: rollingClicks,
+                travelPixels: rollingTravel,
+                rates: workloadRates
+            )
+        )
     }
 
     private var rollingWindowRowOfTiles: some View {
@@ -348,37 +209,19 @@ struct MacUsageDashboardSummary: View {
             .foregroundStyle(.secondary)
     }
 
-    private var twelveHourCaps: MacDashboardTwelveHourMath.ComfortCaps {
-        MacDashboardTwelveHourMath.ComfortCaps.fromModerateMinuteAverages(
-            keysPerMinute: avgKeysPM,
-            clicksPerMinute: avgClicksPM,
-            pixelThousandsPerMinute: avgPixelThousandsPM
-        )
-    }
-
-    private var dayVisibility: MacDashboardTwelveDayMath.DayBarsVisibility {
-        MacDashboardTwelveDayMath.DayBarsVisibility(
-            showKeys: dayShowKeys,
-            showClicks: dayShowClicks,
-            showTravel: dayShowTravel
-        )
-    }
-
     private var hourKeys: Int { store.keysSinceStartOfCurrentHour(reference: now) }
     private var hourClicks: Int { store.clicksSinceStartOfCurrentHour(reference: now) }
     private var hourTravel: Double { store.mouseTravelPixelsSinceStartOfCurrentHour(reference: now) }
 
-    private var hourPlotY: Double {
-        MacDashboardTwelveHourMath.compositeStackPlotY(
-            keystrokes: hourKeys,
-            mouseClicks: hourClicks,
-            travelPixels: hourTravel,
-            caps: twelveHourCaps
-        )
-    }
-
     private var hourWorkloadMinutes: Double {
-        MacDashboardTwelveHourMath.approximateWorkloadMinutes(totalPlotY: hourPlotY)
+        Double(
+            MacEstimatedWorkloadMinutes.totalMinutes(
+                keystrokes: hourKeys,
+                clicks: hourClicks,
+                travelPixels: hourTravel,
+                rates: workloadRates
+            )
+        )
     }
 
     private var hourRowOfTiles: some View {
@@ -398,13 +241,15 @@ struct MacUsageDashboardSummary: View {
     private var todayClicks: Int { todayTotals?.mouseClickCount ?? 0 }
     private var todayTravel: Double { todayTotals?.travelPixels ?? 0 }
 
-    private var todayPlotY: Double {
-        guard let slot = todayTotals else { return 0 }
-        return MacDashboardTwelveDayMath.compositeStackPlotY(slot: slot, vis: dayVisibility)
-    }
-
     private var todayWorkloadHours: Double {
-        MacDashboardTwelveDayMath.approximateWorkloadHours(totalPlotY: todayPlotY)
+        Double(
+            MacEstimatedWorkloadMinutes.totalMinutes(
+                keystrokes: todayKeys,
+                clicks: todayClicks,
+                travelPixels: todayTravel,
+                rates: workloadRates
+            )
+        ) / 60.0
     }
 
     private var todayRowOfTiles: some View {
@@ -419,20 +264,8 @@ struct MacUsageDashboardSummary: View {
 
 private struct MacYesterdayUsageTotalsSheet: View {
 
-    private enum ComfortKeys {
-        static let keysPM = "HandTrack.mac.twelveHourAvgKeysPerMinute"
-        static let clicksPM = "HandTrack.mac.twelveHourAvgClicksPerMinute"
-        static let pxK = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
-        static let dayShowKeys = "HandTrack.mac.twelveDayChartShowKeys"
-        static let dayShowClicks = "HandTrack.mac.twelveDayChartShowClicks"
-        static let dayShowTravel = "HandTrack.mac.twelveDayChartShowPointerTravel"
-    }
-
     @EnvironmentObject private var store: HandTrackStore
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(ComfortKeys.dayShowKeys) private var dayShowKeys = true
-    @AppStorage(ComfortKeys.dayShowClicks) private var dayShowClicks = true
-    @AppStorage(ComfortKeys.dayShowTravel) private var dayShowTravel = true
 
     let reference: Date
 
@@ -485,16 +318,14 @@ private struct MacYesterdayUsageTotalsSheet: View {
         store.computerUsageOnPreviousCalendarDay(reference: reference)
     }
 
-    private var dayVisibility: MacDashboardTwelveDayMath.DayBarsVisibility {
-        MacDashboardTwelveDayMath.DayBarsVisibility(
-            showKeys: dayShowKeys,
-            showClicks: dayShowClicks,
-            showTravel: dayShowTravel
-        )
-    }
-
     private func yesterdayHours(_ slot: ComputerUsageDaySlot) -> Double {
-        let y = MacDashboardTwelveDayMath.compositeStackPlotY(slot: slot, vis: dayVisibility)
-        return MacDashboardTwelveDayMath.approximateWorkloadHours(totalPlotY: y)
+        Double(
+            MacEstimatedWorkloadMinutes.totalMinutes(
+                keystrokes: slot.keystrokeCount,
+                clicks: slot.mouseClickCount,
+                travelPixels: slot.travelPixels,
+                rates: MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
+            )
+        ) / 60.0
     }
 }

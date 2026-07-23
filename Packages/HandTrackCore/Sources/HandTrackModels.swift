@@ -183,6 +183,26 @@ struct ComputerUsageDaySlot: Identifiable, Hashable {
     var id: Date { dayStart }
 }
 
+/// One **calendar week** (Monday 00:00 → next Monday) of Mac-recorded aggregates.
+struct ComputerUsageWeekSlot: Identifiable, Hashable {
+    var weekStart: Date
+    var keystrokeCount: Int
+    var mouseClickCount: Int
+    var travelPixels: Double
+
+    var id: Date { weekStart }
+}
+
+/// One **calendar month** (first day 00:00 → first day of next month) of Mac-recorded aggregates.
+struct ComputerUsageMonthSlot: Identifiable, Hashable {
+    var monthStart: Date
+    var keystrokeCount: Int
+    var mouseClickCount: Int
+    var travelPixels: Double
+
+    var id: Date { monthStart }
+}
+
 /// Denormalized rollup of iPhone hourly pain buckets by **hand-tracking day** (3 AM rollover) on the Mac. ``painPlotValue`` retains the legacy “means of hourly averages, then max(L,R)” statistic; twelve‑day lines use worst / average‑of‑logged‑instant snapshot fields.
 struct DailyPainRollup: Identifiable, Hashable, Codable {
     var dayStart: Date
@@ -232,6 +252,21 @@ extension Date {
 
     var startOfCalendarDay: Date {
         Calendar.current.startOfDay(for: self)
+    }
+
+    /// Start of the calendar week containing this instant (Monday-based).
+    var startOfCalendarWeek: Date {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2
+        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: self)
+        return calendar.date(from: components) ?? startOfCalendarDay
+    }
+
+    /// Start of the calendar month containing this instant.
+    var startOfCalendarMonth: Date {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: self)
+        return calendar.date(from: components) ?? startOfCalendarDay
     }
 
     /// Local “hand day” rolls at **3:00 AM** — timestamps before then belong to the window that began yesterday at 3 AM.

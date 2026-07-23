@@ -208,25 +208,6 @@ struct iOSContentView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    HStack(alignment: .center, spacing: 12) {
-                        Image("HandLogo")
-                            .renderingMode(.original)
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFit()
-                            .frame(width: 36, height: 36)
-                            .accessibilityLabel("HandTrack")
-
-                        Text("Hand Helper")
-                            .font(.title3.weight(.bold))
-                            .tracking(0.2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
-                }
-
                 Section("Hourly Entry") {
                     painBlock()
 

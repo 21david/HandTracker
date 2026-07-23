@@ -6,7 +6,9 @@ struct MacContentView: View {
     @State private var showSyncInfo = false
     @State private var showIosLogsSheet = false
     @State private var showActivityLimits = false
+    @State private var showingMoreCharts = false
     @State private var expandedSyncedLogJournalIDs: Set<UUID> = []
+    @AppStorage("HandTrack.mac.alarmControlMode") private var alarmControlModeRaw = MacAlarmControlMode.mute.rawValue
 
     private static let muteTimeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -16,9 +18,33 @@ struct MacContentView: View {
     }()
 
     var body: some View {
+        Group {
+            if showingMoreCharts {
+                moreChartsView
+            } else {
+                mainDashboardView
+            }
+        }
+        .frame(minWidth: 900, idealWidth: 960, maxWidth: .infinity)
+        .frame(minHeight: 940, idealHeight: 980, maxHeight: .infinity)
+        .onAppear {
+            print("MacContentView appeared")
+            viewModel.start(store: store)
+        }
+        .onDisappear {
+            viewModel.stop()
+        }
+        .sheet(isPresented: $showIosLogsSheet) {
+            iosLogsSheet
+        }
+    }
+
+    private var mainDashboardView: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 headerBar
+
+                MacActivityLimitsPauseBanner(viewModel: viewModel)
 
                 MacActivityBreakBanner(controller: viewModel.activityLimits)
 
@@ -35,18 +61,34 @@ struct MacContentView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollClipDisabled(true)
-        .frame(minWidth: 900, idealWidth: 960, maxWidth: .infinity)
-        .frame(minHeight: 940, idealHeight: 980, maxHeight: .infinity)
-        .onAppear {
-            print("MacContentView appeared")
-            viewModel.start(store: store)
-        }
-        .onDisappear {
-            viewModel.stop()
-        }
-        .sheet(isPresented: $showIosLogsSheet) {
-            iosLogsSheet
+    }
+
+    private var moreChartsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 48) {
+                HStack(alignment: .center, spacing: 12) {
+                    Button {
+                        showingMoreCharts = false
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Return to the main dashboard")
+
+                    Spacer(minLength: 8)
+
+                    Text("More Charts")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 8)
+                }
+
+                MacTwelveWeekStackedUsagePainChart()
+                MacTwelveMonthStackedUsagePainChart()
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -111,6 +153,16 @@ struct MacContentView: View {
                         viewModel.activityLimits.refreshAfterSettingsChange()
                     }
                 }
+
+                Button {
+                    showingMoreCharts = true
+                } label: {
+                    Text("More Charts")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .tracking(0.15)
+                }
+                .buttonStyle(GrayAccessoryPillButtonStyle())
+                .help("12-week and 12-month usage charts")
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -135,69 +187,101 @@ struct MacContentView: View {
             }
         }
 
-        var help: String {
+        func help(for mode: MacAlarmControlMode) -> String {
+            let action = mode == .mute ? "Silence break-alarm sounds" : "Pause Activity Limits"
             switch self {
-            case .five: return "Silence break-alarm sounds for 5 minutes."
-            case .ten: return "Silence break-alarm sounds for 10 minutes."
-            case .fifteen: return "Silence break-alarm sounds for 15 minutes."
-            case .thirty: return "Silence break-alarm sounds for 30 minutes."
-            case .oneHour: return "Silence break-alarm sounds for 1 hour."
+            case .five: return "\(action) for 5 minutes."
+            case .ten: return "\(action) for 10 minutes."
+            case .fifteen: return "\(action) for 15 minutes."
+            case .thirty: return "\(action) for 30 minutes."
+            case .oneHour: return "\(action) for 1 hour."
             }
         }
     }
 
-    /// Single-row mute strip: leading label swaps between “Mute” and “Muted until …” without an extra row.
+    private var alarmControlMode: MacAlarmControlMode {
+        get { MacAlarmControlMode(rawValue: alarmControlModeRaw) ?? .mute }
+        nonmutating set { alarmControlModeRaw = newValue.rawValue }
+    }
+
+    private var alarmControlModeBinding: Binding<MacAlarmControlMode> {
+        Binding(
+            get: { alarmControlMode },
+            set: { alarmControlMode = $0 }
+        )
+    }
+
+    /// Rotating Mute/Pause selector plus shared duration presets.
     @ViewBuilder
     private func muteControls(now: Date) -> some View {
         let _ = viewModel.refreshExpiredMuteIfNeeded(now: now)
+        let _ = viewModel.refreshExpiredPauseIfNeeded(now: now)
 
-        let until = viewModel.recordingAlarmMuteExpiresAt
-        let activeMute = until.map { $0 > now } ?? false
-        let labelText: String = {
-            if let expiry = until, expiry > now {
-                return "Muted until \(Self.muteTimeFormatter.string(from: expiry))"
+        let mode = alarmControlMode
+        let activeExpiry = mode == .mute
+            ? viewModel.recordingAlarmMuteExpiresAt
+            : viewModel.activityLimitsPauseExpiresAt
+        let active = activeExpiry.map { $0 > now } ?? false
+        let activeMinutes = mode == .mute
+            ? viewModel.mutedBreakAlarmChosenMinutes
+            : viewModel.activityLimitsPauseChosenMinutes
+        let statusText: String? = {
+            if let expiry = activeExpiry, expiry > now {
+                let verb = mode == .mute ? "Muted" : "Paused"
+                return "\(verb) until \(Self.muteTimeFormatter.string(from: expiry))"
             }
-            return "Mute"
+            return nil
         }()
 
         HStack(alignment: .center, spacing: 10) {
-            Text(labelText)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .layoutPriority(-1)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, activeMute ? 4 : 0)
+            MacMutePauseCylinderPicker(selection: alarmControlModeBinding)
+
+            if let statusText {
+                Text(statusText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(mode == .pause ? Color.blue : Color.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
 
             HStack(spacing: 8) {
                 ForEach(MuteInterval.allCases) { interval in
                     Button {
-                        viewModel.muteBreakAlarms(minutes: interval.rawValue)
+                        if mode == .mute {
+                            viewModel.muteBreakAlarms(minutes: interval.rawValue)
+                        } else {
+                            viewModel.pauseActivityLimits(minutes: interval.rawValue)
+                        }
                     } label: {
                         Text(interval.shortLabel)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                     }
-                    .buttonStyle(MuteDurationPillStyle(selectionLockedIn: activeMute
-                            && viewModel.mutedBreakAlarmChosenMinutes == interval.rawValue))
-                    .help(interval.help)
+                    .buttonStyle(MuteDurationPillStyle(selectionLockedIn: active
+                            && activeMinutes == interval.rawValue))
+                    .help(interval.help(for: mode))
                 }
 
                 Button {
-                    viewModel.clearBreakAlarmMute()
+                    if mode == .mute {
+                        viewModel.clearBreakAlarmMute()
+                    } else {
+                        viewModel.clearActivityLimitsPause()
+                    }
                 } label: {
-                    Text("Unmute")
+                    Text(mode == .mute ? "Unmute" : "Resume")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .tracking(0.2)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
                 .buttonStyle(UnmutePillButtonStyle())
-                .disabled(!activeMute)
-                .opacity(activeMute ? 1 : 0.42)
-                .help(activeMute ? "Resume break alarms immediately." : "Timers are not muted.")
+                .disabled(!active)
+                .opacity(active ? 1 : 0.42)
+                .help(active
+                    ? (mode == .mute ? "Resume break-alarm sounds immediately." : "Resume Activity Limits immediately.")
+                    : (mode == .mute ? "Sounds are not muted." : "Activity Limits are not paused."))
             }
             .layoutPriority(1)
             .fixedSize(horizontal: true, vertical: false)

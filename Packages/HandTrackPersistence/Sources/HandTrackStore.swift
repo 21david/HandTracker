@@ -414,6 +414,154 @@ final class HandTrackStore: ObservableObject {
         return slots.first
     }
 
+    /// The last `count` **calendar weeks** (Monday → Monday) ending on the week containing `reference`, oldest → newest.
+    func computerUsageByTrailingCalendarWeeks(reference: Date = Date(), count: Int = 12) -> [ComputerUsageWeekSlot] {
+        let calendar = Calendar.current
+        let anchorWeek = reference.startOfCalendarWeek
+
+        var slots: [ComputerUsageWeekSlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let weeksBack = count - 1 - i
+            guard let weekStart = calendar.date(byAdding: .weekOfYear, value: -weeksBack, to: anchorWeek),
+                  let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart)
+            else { continue }
+
+            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
+                return sum + bucket.keyCount
+            }
+            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
+                return sum + bucket.clickCount
+            }
+            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
+                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
+                return sum + bucket.travelPixels
+            }
+
+            slots.append(
+                ComputerUsageWeekSlot(
+                    weekStart: weekStart,
+                    keystrokeCount: keystrokeCount,
+                    mouseClickCount: mouseClickCount,
+                    travelPixels: travelPixels
+                )
+            )
+        }
+
+        return slots
+    }
+
+    /// The last `count` **calendar months** ending on the month containing `reference`, oldest → newest.
+    func computerUsageByTrailingCalendarMonths(reference: Date = Date(), count: Int = 12) -> [ComputerUsageMonthSlot] {
+        let calendar = Calendar.current
+        let anchorMonth = reference.startOfCalendarMonth
+
+        var slots: [ComputerUsageMonthSlot] = []
+        slots.reserveCapacity(count)
+
+        for i in 0..<count {
+            let monthsBack = count - 1 - i
+            guard let monthStart = calendar.date(byAdding: .month, value: -monthsBack, to: anchorMonth),
+                  let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart)
+            else { continue }
+
+            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
+                return sum + bucket.keyCount
+            }
+            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
+                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
+                return sum + bucket.clickCount
+            }
+            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
+                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
+                return sum + bucket.travelPixels
+            }
+
+            slots.append(
+                ComputerUsageMonthSlot(
+                    monthStart: monthStart,
+                    keystrokeCount: keystrokeCount,
+                    mouseClickCount: mouseClickCount,
+                    travelPixels: travelPixels
+                )
+            )
+        }
+
+        return slots
+    }
+
+    func monthlyPainWorstLoggedLeftHand(forOrderedMonthStarts months: [Date]) -> [Double?] {
+        monthlyPainLoggedHandAggregate(forOrderedMonthStarts: months, hand: \.painLevelLeft) { vals in vals.max()! }
+    }
+
+    func monthlyPainWorstLoggedRightHand(forOrderedMonthStarts months: [Date]) -> [Double?] {
+        monthlyPainLoggedHandAggregate(forOrderedMonthStarts: months, hand: \.painLevelRight) { vals in vals.max()! }
+    }
+
+    func monthlyPainMeanLoggedLeftHand(forOrderedMonthStarts months: [Date]) -> [Double?] {
+        monthlyPainLoggedHandAggregate(forOrderedMonthStarts: months, hand: \.painLevelLeft) { vals in
+            vals.reduce(0, +) / Double(vals.count)
+        }
+    }
+
+    func monthlyPainMeanLoggedRightHand(forOrderedMonthStarts months: [Date]) -> [Double?] {
+        monthlyPainLoggedHandAggregate(forOrderedMonthStarts: months, hand: \.painLevelRight) { vals in
+            vals.reduce(0, +) / Double(vals.count)
+        }
+    }
+
+    private func monthlyPainLoggedHandAggregate(
+        forOrderedMonthStarts months: [Date],
+        hand: KeyPath<HourlyHandLog, Double>,
+        aggregate: ([Double]) -> Double
+    ) -> [Double?] {
+        let cal = Calendar.current
+        return months.map { monthStart in
+            guard let monthEnd = cal.date(byAdding: .month, value: 1, to: monthStart) else { return nil }
+            let vals = hourlyLogs.filter { $0.hourStart >= monthStart && $0.hourStart < monthEnd }.map { $0[keyPath: hand] }
+            guard !vals.isEmpty else { return nil }
+            return aggregate(vals)
+        }
+    }
+
+    func weeklyPainWorstLoggedLeftHand(forOrderedWeekStarts weeks: [Date]) -> [Double?] {
+        weeklyPainLoggedHandAggregate(forOrderedWeekStarts: weeks, hand: \.painLevelLeft) { vals in vals.max()! }
+    }
+
+    func weeklyPainWorstLoggedRightHand(forOrderedWeekStarts weeks: [Date]) -> [Double?] {
+        weeklyPainLoggedHandAggregate(forOrderedWeekStarts: weeks, hand: \.painLevelRight) { vals in vals.max()! }
+    }
+
+    func weeklyPainMeanLoggedLeftHand(forOrderedWeekStarts weeks: [Date]) -> [Double?] {
+        weeklyPainLoggedHandAggregate(forOrderedWeekStarts: weeks, hand: \.painLevelLeft) { vals in
+            vals.reduce(0, +) / Double(vals.count)
+        }
+    }
+
+    func weeklyPainMeanLoggedRightHand(forOrderedWeekStarts weeks: [Date]) -> [Double?] {
+        weeklyPainLoggedHandAggregate(forOrderedWeekStarts: weeks, hand: \.painLevelRight) { vals in
+            vals.reduce(0, +) / Double(vals.count)
+        }
+    }
+
+    private func weeklyPainLoggedHandAggregate(
+        forOrderedWeekStarts weeks: [Date],
+        hand: KeyPath<HourlyHandLog, Double>,
+        aggregate: ([Double]) -> Double
+    ) -> [Double?] {
+        let cal = Calendar.current
+        return weeks.map { weekStart in
+            guard let weekEnd = cal.date(byAdding: .weekOfYear, value: 1, to: weekStart) else { return nil }
+            let vals = hourlyLogs.filter { $0.hourStart >= weekStart && $0.hourStart < weekEnd }.map { $0[keyPath: hand] }
+            guard !vals.isEmpty else { return nil }
+            return aggregate(vals)
+        }
+    }
+
     /// Legacy daily figure: hourly means, then max(L̄, R̄). Order matches ``computerUsageByTrailingCalendarDays``.
     func dailyPainMaxOfMeanHourlyAverages(forOrderedCalendarDayStarts days: [Date]) -> [Double?] {
         days.map { dailyPainRollupSnapshots[$0.timeIntervalSince1970]?.legacyPainPlot }

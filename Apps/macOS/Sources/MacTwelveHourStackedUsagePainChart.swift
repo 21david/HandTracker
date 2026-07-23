@@ -385,13 +385,16 @@ private func twelveHourLeadingWorkloadMinuteTickLabel(chartY: Double) -> String 
     return "\(m)m"
 }
 
-/// Approximate "minutes worth of work" for one column of the twelve-hour chart. Same formula as
-/// the leading axis ticks — `plotY × leadingMinutesPerPlotYUnit (= 6 min / unit)`.
-private func twelveHourEstimatedMinutesLabel(plotY: Double) -> String {
-    guard plotY.isFinite, plotY > 0 else { return "" }
-    let mins = max(0.0, plotY * TwelveHourCombinedChart.leadingMinutesPerPlotYUnit)
-    let rounded = Int(mins.rounded(.toNearestOrAwayFromZero))
-    return "\(rounded) min"
+/// Same uncapped ratio math as the twelve-day chart (`count ÷ rate`).
+private func twelveHourEstimatedMinutesLabel(slot: ComputerUsageHourSlot) -> String {
+    let rates = MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
+    let total = MacEstimatedWorkloadMinutes.totalMinutes(
+        keystrokes: slot.keystrokeCount,
+        clicks: slot.mouseClickCount,
+        travelPixels: slot.travelPixels,
+        rates: rates
+    )
+    return MacEstimatedWorkloadMinutes.compactDurationLabel(totalMinutes: total)
 }
 
 @AxisContentBuilder
@@ -439,7 +442,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
                 .foregroundStyle(Color(nsColor: .labelColor))
 
             Text(
-                "About half of the stacked bar height ≈ sustaining these together for roughly one busy hour."
+                "Used to convert raw keys / clicks / pointer travel into estimated minutes (count ÷ rate). Also scales bar heights."
             )
             .font(.caption2)
             .foregroundStyle(Color(nsColor: .secondaryLabelColor))
@@ -510,6 +513,54 @@ private struct TwelveHourComfortCalibrationPopover: View {
     private static let popoverReadableWidth: CGFloat = 312
 }
 
+
+private func twelveHourColumnUsageMinutes(slot: ComputerUsageHourSlot) -> (keyboard: Int, mouse: Int) {
+    MacEstimatedWorkloadMinutes.columnBreakdown(
+        keystrokes: slot.keystrokeCount,
+        clicks: slot.mouseClickCount,
+        travelPixels: slot.travelPixels,
+        rates: .fromUserDefaults()
+    )
+}
+
+private struct TwelveHourColumnContextMenuOverlay: View {
+    let slots: [ComputerUsageHourSlot]
+    let chartProxy: ChartProxy
+    let geometry: GeometryProxy
+
+    var body: some View {
+        if let plotFrameAnchor = chartProxy.plotFrame {
+            let plotBounds = geometry[plotFrameAnchor]
+            let gap = TwelveHourCombinedChart.xSlotGap
+            let regions = Array(slots.enumerated()).compactMap { idx, slot -> MacUsageBreakdownHitRegion? in
+                guard slot.keystrokeCount > 0 || slot.mouseClickCount > 0 || slot.travelPixels > 0 else {
+                    return nil
+                }
+                let centerXData = Double(idx) + 0.5
+                let xStartData = Double(idx) + gap
+                let xEndData = Double(idx + 1) - gap
+                guard let xStart = chartProxy.position(for: (x: xStartData, y: 0.0)),
+                      let xEnd = chartProxy.position(for: (x: xEndData, y: 0.0)),
+                      let yBottom = chartProxy.position(for: (x: centerXData, y: 0.0)),
+                      let yTop = chartProxy.position(for: (x: centerXData, y: TwelveHourCombinedChart.chartUsageAxisMax))
+                else { return nil }
+                let minutes = twelveHourColumnUsageMinutes(slot: slot)
+                return MacUsageBreakdownHitRegion(
+                    frame: CGRect(
+                        x: plotBounds.origin.x + min(xStart.x, xEnd.x),
+                        y: plotBounds.origin.y + min(yBottom.y, yTop.y),
+                        width: max(8, abs(xEnd.x - xStart.x)),
+                        height: max(8, abs(yTop.y - yBottom.y))
+                    ),
+                    keyboardMinutes: minutes.keyboard,
+                    mouseMinutes: minutes.mouse
+                )
+            }
+            MacUsageBreakdownRightClickLayer(regions: regions)
+        }
+    }
+}
+
 // MARK: - Chart panel (narrow `some View` inference)
 
 private struct TwelveHourUsageChartPanel: View {
@@ -568,6 +619,15 @@ private struct TwelveHourUsageChartPanel: View {
             hourlyBoundaryAxisMarks(boundaries: prepared.hourBoundaries, slots: slots)
         }
         .frame(height: 276)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                TwelveHourColumnContextMenuOverlay(
+                    slots: slots,
+                    chartProxy: proxy,
+                    geometry: geometry
+                )
+            }
+        }
     }
 
     @ChartContentBuilder
@@ -605,8 +665,10 @@ private struct TwelveHourUsageChartPanel: View {
                 stackedUsageSegmentOverlay(layer: layer, slots: slots)
             }
             .annotation(position: .top, alignment: .center, spacing: 5) {
-                if topmostIDByIndex[layer.plotIndex] == layer.id {
-                    Text(twelveHourEstimatedMinutesLabel(plotY: layer.yHigh))
+                if topmostIDByIndex[layer.plotIndex] == layer.id,
+                   slots.indices.contains(layer.plotIndex)
+                {
+                    Text(twelveHourEstimatedMinutesLabel(slot: slots[layer.plotIndex]))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
@@ -774,14 +836,14 @@ struct MacTwelveHourStackedUsagePainChart: View {
     @EnvironmentObject private var store: HandTrackStore
 
     @AppStorage(TwelveHourComfortStorage.avgKeysPerMinuteKey)
-    private var avgKeysPerMinute = 15
+    private var avgKeysPerMinute = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
 
     @AppStorage(TwelveHourComfortStorage.avgClicksPerMinuteKey)
-    private var avgClicksPerMinute = 5
+    private var avgClicksPerMinute = MacEstimatedWorkloadMinutes.defaultClicksPerMinute
 
     /// Thousands of px per minute (example: `10` → 10,000 px/min).
     @AppStorage(TwelveHourComfortStorage.avgPixelThousandsPerMinuteKey)
-    private var avgPixelThousandsPerMinute = 7
+    private var avgPixelThousandsPerMinute = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
 
     @State private var showComfortCalibration = false
 
@@ -807,6 +869,7 @@ struct MacTwelveHourStackedUsagePainChart: View {
     @ViewBuilder
     @MainActor
     private func chartContent(referenceDate: Date) -> some View {
+        let _ = MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
         let caps = HourComfortCaps.fromModerateMinuteAverages(
             keysPerMinute: avgKeysPerMinute,
             clicksPerMinute: avgClicksPerMinute,

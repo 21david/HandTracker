@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "559D53F46209885B9FAA6F42"
+               BlueprintIdentifier = "A467F42477BE834FE6393981"
                BuildableName = "HandTrackiOS.app"
                BlueprintName = "HandTrackiOS"
-               ReferencedContainer = "container:HandTrack.xcodeproj">
+               ReferencedContainer = "container:r.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "559D53F46209885B9FAA6F42"
+            BlueprintIdentifier = "A467F42477BE834FE6393981"
             BuildableName = "HandTrackiOS.app"
             BlueprintName = "HandTrackiOS"
-            ReferencedContainer = "container:HandTrack.xcodeproj">
+            ReferencedContainer = "container:r.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -55,10 +55,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "559D53F46209885B9FAA6F42"
+            BlueprintIdentifier = "A467F42477BE834FE6393981"
             BuildableName = "HandTrackiOS.app"
             BlueprintName = "HandTrackiOS"
-            ReferencedContainer = "container:HandTrack.xcodeproj">
+            ReferencedContainer = "container:r.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -74,10 +74,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "559D53F46209885B9FAA6F42"
+            BlueprintIdentifier = "A467F42477BE834FE6393981"
             BuildableName = "HandTrackiOS.app"
             BlueprintName = "HandTrackiOS"
-            ReferencedContainer = "container:HandTrack.xcodeproj">
+            ReferencedContainer = "container:r.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

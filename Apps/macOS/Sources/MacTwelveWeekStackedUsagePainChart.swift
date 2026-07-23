@@ -2,29 +2,29 @@ import AppKit
 import Charts
 import SwiftUI
 
-private enum TwelveDayCombinedChart {
+private enum TwelveWeekCombinedChart {
     /// Comfort caps use this “reference day” extrapolation (`×12` five‑minute blocks → one hour‑wide slice).
     static let typicalWorkHours = 3.0
-    static let scaleFactor = 12.0 * typicalWorkHours
+    static let scaleFactor = 12.0 * typicalWorkHours * 7.0
 
     /// Leading axis speaks in **hours 0 … ~5**, while plot Y stays `0 … 10` so pain stays on a 0–10 scale beside it.
     /// Calibrate modality caps (~legacy **three** heavy‑hour tiers) down so the **stack visually reaches the top nearer ~five aggregated hours**.
-    static let hoursShownAtPlotTop = 5.0
-    static let referenceHeavyHourBaseline = 3.0
+    static let hoursShownAtPlotTop = 30.0
+    static let referenceHeavyHourBaseline = 30.0
     private static let usageCapEaseVersusDisplayedHours =
         referenceHeavyHourBaseline / hoursShownAtPlotTop
 
     /// Nudges plotted bars (+ pain line) slightly right (~20 % of a nominal day‑column) so x‑axis cues line up cleanly on device.
     static let horizontalBarShift = 0.2
 
-    static func dayBarBucketCenter(plotIndex: Int) -> Double { Double(plotIndex) + 0.5 + horizontalBarShift }
+    static func weekBarBucketCenter(plotIndex: Int) -> Double { Double(plotIndex) + 0.5 + horizontalBarShift }
 
-    static func dayBarXStart(plotIndex: Int, gap: Double) -> Double { Double(plotIndex) + gap + horizontalBarShift }
+    static func weekBarXStart(plotIndex: Int, gap: Double) -> Double { Double(plotIndex) + gap + horizontalBarShift }
 
-    static func dayBarXEnd(plotIndex: Int, gap: Double) -> Double { Double(plotIndex + 1) - gap + horizontalBarShift }
+    static func weekBarXEnd(plotIndex: Int, gap: Double) -> Double { Double(plotIndex + 1) - gap + horizontalBarShift }
 
     /// Integers **`1 … count−1`** (plus horizontal shift): vertical ticks sit **between** adjacent calendar‑day bars.
-    static func dayBoundaryTickPositions(barCount: Int) -> [Double] {
+    static func weekBoundaryTickPositions(barCount: Int) -> [Double] {
         guard barCount > 1 else { return [] }
         return Array(1..<barCount).map { Double($0) + horizontalBarShift }
     }
@@ -33,20 +33,20 @@ private enum TwelveDayCombinedChart {
     static let chartXPlotSideInset: Double = 0.058
 
     static func chartXDomainLower(barCount _: Int) -> Double {
-        dayBarXStart(plotIndex: 0, gap: xSlotGap) - chartXPlotSideInset
+        weekBarXStart(plotIndex: 0, gap: xSlotGap) - chartXPlotSideInset
     }
 
     static func chartXDomainUpper(barCount: Int) -> Double {
         guard barCount > 0 else { return 1 }
-        return dayBarXEnd(plotIndex: barCount - 1, gap: xSlotGap) + chartXPlotSideInset
+        return weekBarXEnd(plotIndex: barCount - 1, gap: xSlotGap) + chartXPlotSideInset
     }
 
-    static let keystrokesDayCap = 275.0 * scaleFactor * usageCapEaseVersusDisplayedHours
-    static let keystrokesDayExcess = 40.0 * scaleFactor * usageCapEaseVersusDisplayedHours
-    static let clicksDayCap = 120.0 * scaleFactor * usageCapEaseVersusDisplayedHours
-    static let clicksDayExcess = 17.0 * scaleFactor * usageCapEaseVersusDisplayedHours
-    static let travelDayCap = 125_000.0 * scaleFactor * usageCapEaseVersusDisplayedHours
-    static let travelDayExcess = 37_500.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let keystrokesWeekCap = 275.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let keystrokesWeekExcess = 40.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let clicksWeekCap = 120.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let clicksWeekExcess = 17.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let travelWeekCap = 125_000.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let travelWeekExcess = 37_500.0 * scaleFactor * usageCapEaseVersusDisplayedHours
 
     static let usageBandThird = 10.0 / 3.0
 
@@ -56,16 +56,36 @@ private enum TwelveDayCombinedChart {
 
     static let axisBaseline = Color(.sRGB, white: 0.55, opacity: 1.0)
 
-    static let axisLabelFormatter: DateFormatter = {
+    static let weekAxisDayFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEE M/d"
+        formatter.dateFormat = "M/d"
         return formatter
     }()
+
+    /// Monday-based ``ComputerUsageWeekSlot.weekStart`` → preceding Sunday (Sun–Sat label span).
+    static func sundayStart(forMondayWeekStart weekStart: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: -1, to: weekStart) ?? weekStart
+    }
+
+    static func saturdayEnd(forMondayWeekStart weekStart: Date) -> Date {
+        let sunday = sundayStart(forMondayWeekStart: weekStart)
+        return Calendar.current.date(byAdding: .day, value: 6, to: sunday) ?? weekStart
+    }
+
+    static func weekOfYearNumber(forMondayWeekStart weekStart: Date) -> Int {
+        Calendar.current.component(.weekOfYear, from: weekStart)
+    }
+
+    static func weekAxisCompactHeading(forMondayWeekStart weekStart: Date) -> String {
+        let start = weekAxisDayFormatter.string(from: sundayStart(forMondayWeekStart: weekStart))
+        let end = weekAxisDayFormatter.string(from: saturdayEnd(forMondayWeekStart: weekStart))
+        return "\(start) - \(end)"
+    }
 }
 
 // MARK: - Types & prep
 
-private enum StackDayMetric: Hashable {
+private enum StackWeekMetric: Hashable {
     case keystrokes(Int)
     case mouseClicks(Int)
     case travel(Double)
@@ -90,9 +110,9 @@ private enum StackDayMetric: Hashable {
         }
     }
 
-    func tooltipText(plotIndex: Int, slots: [ComputerUsageDaySlot]) -> String {
+    func tooltipText(plotIndex: Int, slots: [ComputerUsageWeekSlot]) -> String {
         let bucket = slots.indices.contains(plotIndex)
-            ? TwelveDayCombinedChart.axisLabelFormatter.string(from: slots[plotIndex].dayStart)
+            ? TwelveWeekCombinedChart.weekAxisCompactHeading(forMondayWeekStart: slots[plotIndex].weekStart)
             : "?"
 
         switch self {
@@ -134,9 +154,9 @@ private enum StackDayMetric: Hashable {
     }
 }
 
-private struct DayStackLayer: Identifiable {
+private struct WeekStackLayer: Identifiable {
     let plotIndex: Int
-    let metric: StackDayMetric
+    let metric: StackWeekMetric
     let yLow: Double
     let yHigh: Double
     let stress: Double
@@ -152,12 +172,12 @@ private struct DayStackLayer: Identifiable {
     }
 }
 
-private struct TwelveDayUsageModalityVisibility: Equatable {
+private struct TwelveWeekUsageModalityVisibility: Equatable {
     var showKeystrokes: Bool
     var showMouseClicks: Bool
     var showTravel: Bool
 
-    static let allVisible = TwelveDayUsageModalityVisibility(
+    static let allVisible = TwelveWeekUsageModalityVisibility(
         showKeystrokes: true,
         showMouseClicks: true,
         showTravel: true
@@ -165,25 +185,16 @@ private struct TwelveDayUsageModalityVisibility: Equatable {
 }
 
 /// One Mac‑friendly pain statistic on the 12‑day chart (**per hand** × **metric**).
-private enum TwelveDayPainCurve: String, CaseIterable, Identifiable {
+private enum TwelveWeekPainCurve: String, CaseIterable, Identifiable {
     case worstLeft
     case averageLeft
-    case firstLeft
     case worstRight
     case averageRight
-    case firstRight
 
     var id: String { rawValue }
 
     /// Horizontally across each day column: **max / avg** at centre; **morning** sits **⅙** (~17 %) across from the leading edge.
-    var fractionAlongBar: Double {
-        switch self {
-        case .worstLeft, .worstRight, .averageLeft, .averageRight:
-            return 0.5
-        case .firstLeft, .firstRight:
-            return 1.0 / 6.0
-        }
-    }
+    var fractionAlongBar: Double { 0.5 }
 
     /// Flat fill for rectangles / line colour (morning dots use a separate gradient overlay).
     var dotFill: Color {
@@ -192,48 +203,36 @@ private enum TwelveDayPainCurve: String, CaseIterable, Identifiable {
         case .worstRight: return Color(red: 0.82, green: 0.22, blue: 0.20)
         case .averageLeft: return Color(red: 1.0, green: 0.90, blue: 0.28)
         case .averageRight: return Color(red: 0.85, green: 0.70, blue: 0.12)
-        case .firstLeft: return Color(red: 0.16, green: 0.48, blue: 1.00)
-        case .firstRight: return Color(red: 0.14, green: 0.44, blue: 0.98)
         }
     }
 
     /// Solid tint for translucent connectors (readable next to gradients).
-    var connectorLineTint: Color {
-        switch self {
-        case .firstLeft, .firstRight:
-            return Color(red: 0.18, green: 0.50, blue: 1.00)
-        default:
-            return dotFill
-        }
-    }
+    var connectorLineTint: Color { dotFill }
 
     var dotInk: Color {
         switch self {
         case .worstLeft, .worstRight: return Color(red: 0.22, green: 0.05, blue: 0.04)
         case .averageLeft, .averageRight: return Color(red: 0.18, green: 0.12, blue: 0.02)
-        case .firstLeft, .firstRight: return Color(red: 0.02, green: 0.16, blue: 0.38)
         }
     }
 
-    func helpLine(dayHeading: String, compactPain: String) -> String {
+    func helpLine(weekHeading: String, compactPain: String) -> String {
         let handLetter: String
         switch self {
-        case .worstLeft, .averageLeft, .firstLeft: handLetter = "L"
+        case .worstLeft, .averageLeft: handLetter = "L"
         default: handLetter = "R"
         }
         switch self {
         case .worstLeft, .worstRight:
-            return "\(dayHeading): \(handLetter) max \(compactPain)"
+            return "\(weekHeading): \(handLetter) max \(compactPain)"
         case .averageLeft, .averageRight:
-            return "\(dayHeading): \(handLetter) avg \(compactPain)"
-        case .firstLeft, .firstRight:
-            return "\(dayHeading): \(handLetter) morning \(compactPain)"
+            return "\(weekHeading): \(handLetter) avg \(compactPain)"
         }
     }
 }
 
 /// One decimal chip for averages: `3.3`, drops trailing `.0` → `5`.
-private func twelveDayAveragePainChipString(_ pain: Double) -> String {
+private func twelveWeekAveragePainChipString(_ pain: Double) -> String {
     let t = round(pain * 10) / 10
     let frac = abs(t.truncatingRemainder(dividingBy: 1))
     guard frac >= 1e-4 else {
@@ -242,103 +241,53 @@ private func twelveDayAveragePainChipString(_ pain: Double) -> String {
     return String(format: "%.1f", t)
 }
 
-private struct DayPainSample: Identifiable {
+private struct WeekPainSample: Identifiable {
     let plotIndex: Int
     let pain: Double
-    let curve: TwelveDayPainCurve
+    let curve: TwelveWeekPainCurve
 
     var id: String { "\(curve.rawValue)-\(plotIndex)" }
 
     func plotX(gap: Double) -> Double {
         let frac = curve.fractionAlongBar
-        let leading = TwelveDayCombinedChart.dayBarXStart(plotIndex: plotIndex, gap: gap)
-        let trailing = TwelveDayCombinedChart.dayBarXEnd(plotIndex: plotIndex, gap: gap)
+        let leading = TwelveWeekCombinedChart.weekBarXStart(plotIndex: plotIndex, gap: gap)
+        let trailing = TwelveWeekCombinedChart.weekBarXEnd(plotIndex: plotIndex, gap: gap)
         return leading + frac * (trailing - leading)
     }
 }
 
 /// Extracted so `PointMark` annotations don't participate in huge `some View` inference inside `Chart`.
-private struct TwelveDayPainDotOverlay: View {
-    let sample: DayPainSample
-    let curve: TwelveDayPainCurve
-    let slots: [ComputerUsageDaySlot]
+private struct TwelveWeekPainDotOverlay: View {
+    let sample: WeekPainSample
+    let curve: TwelveWeekPainCurve
+    let slots: [ComputerUsageWeekSlot]
 
     private var compactPainLabel: String {
         switch curve {
         case .averageLeft, .averageRight:
-            return twelveDayAveragePainChipString(sample.pain)
+            return twelveWeekAveragePainChipString(sample.pain)
         default:
             return sample.pain.handTrackPainCompactLabel
         }
     }
 
     private var hoverTip: String {
-        let dayHeading = slots.indices.contains(sample.plotIndex)
-            ? TwelveDayCombinedChart.axisLabelFormatter.string(from: slots[sample.plotIndex].dayStart)
+        let weekHeading = slots.indices.contains(sample.plotIndex)
+            ? TwelveWeekCombinedChart.weekAxisCompactHeading(forMondayWeekStart: slots[sample.plotIndex].weekStart)
             : "?"
-        return curve.helpLine(dayHeading: dayHeading, compactPain: compactPainLabel)
+        return curve.helpLine(weekHeading: weekHeading, compactPain: compactPainLabel)
     }
 
     private var dotInk: Color { curve.dotInk }
 
-    private var numericLabelInk: Color {
-        switch curve {
-        case .firstLeft, .firstRight:
-            return Color(red: 0.92, green: 0.97, blue: 1.0).opacity(0.97)
-        default:
-            return dotInk
-        }
-    }
-
-    private var morningNumericLabelShadow: Color {
-        switch curve {
-        case .firstLeft, .firstRight: return Color.black.opacity(0.42)
-        default: return .clear
-        }
-    }
     @ViewBuilder
     private var dotFace: some View {
-        switch curve {
-        case .firstLeft, .firstRight:
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.06, green: 0.40, blue: 1.00),
-                            Color(red: 0.07, green: 0.60, blue: 1.00),
-                            Color(red: 0.005, green: 0.18, blue: 0.85),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.62),
-                                    Color.white.opacity(0.06),
-                                    Color.clear,
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: 1.05
-                        )
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(dotInk.opacity(0.5), lineWidth: 0.55)
-                )
-        default:
-            Circle()
-                .fill(curve.dotFill)
-                .overlay(
-                    Circle()
-                        .strokeBorder(dotInk.opacity(0.42), lineWidth: 0.65)
-                )
-        }
+        Circle()
+            .fill(curve.dotFill)
+            .overlay(
+                Circle()
+                    .strokeBorder(dotInk.opacity(0.42), lineWidth: 0.65)
+            )
     }
 
     var body: some View {
@@ -351,77 +300,160 @@ private struct TwelveDayPainDotOverlay: View {
                 .scaleEffect(x: 0.9, anchor: .center)
                 .lineLimit(1)
                 .minimumScaleFactor(0.43)
-                .foregroundStyle(numericLabelInk)
-                .shadow(color: morningNumericLabelShadow, radius: 1.1, x: 0, y: 0.6)
+                .foregroundStyle(dotInk)
+                
         }
         .frame(width: 24, height: 24)
         .help(hoverTip)
     }
 }
 
-private func dayCappedFraction(_ value: Double, cap: Double) -> Double {
+private func weekCappedFraction(_ value: Double, cap: Double) -> Double {
     guard cap > 0 else { return 0 }
     return min(1, value / cap)
 }
 
-private struct BuiltDayMetricStage {
-    let unscaledHeight: Double
-    let stress: Double
-    let metric: StackDayMetric
+/// Same workload ladder as the twelve-day chart: `plotY / 2` → hours.
+private func twelveWeekEstimatedMinutes(plotY: Double) -> Int {
+    guard plotY.isFinite, plotY > 0 else { return 0 }
+    let hours = max(0, plotY / 2.0)
+    return Int((hours * 60.0).rounded(.toNearestOrAwayFromZero))
 }
 
-private func buildDayStackLayers(
-    slots: [ComputerUsageDaySlot],
-    usageVisibility: TwelveDayUsageModalityVisibility
-) -> [DayStackLayer] {
+private func twelveWeekEstimatedTimeLabel(plotY: Double) -> String {
+    let totalMinutes = twelveWeekEstimatedMinutes(plotY: plotY)
+    guard totalMinutes > 0 else { return "" }
+    let h = totalMinutes / 60
+    let m = totalMinutes % 60
+    if h == 0 { return "\(m)m" }
+    if m == 0 { return "\(h)h" }
+    return "\(h)h \(m)m"
+}
+
+private func twelveWeekColumnUsageMinutes(
+    plotIndex: Int,
+    plotY: Double,
+    stackLayers: [WeekStackLayer]
+) -> (keyboard: Int, mouse: Int) {
+    let total = twelveWeekEstimatedMinutes(plotY: plotY)
+    guard total > 0 else { return (0, 0) }
+    var keysY = 0.0
+    var mouseY = 0.0
+    for layer in stackLayers where layer.plotIndex == plotIndex {
+        let h = layer.yHigh - layer.yLow
+        switch layer.metric {
+        case .keystrokes:
+            keysY += h
+        case .mouseClicks, .travel:
+            mouseY += h
+        }
+    }
+    let sum = keysY + mouseY
+    guard sum > 1e-9 else { return (0, total) }
+    let keyboard = Int((Double(total) * keysY / sum).rounded(.toNearestOrAwayFromZero))
+    return (keyboard, max(0, total - keyboard))
+}
+
+private struct TwelveWeekColumnContextMenuOverlay: View {
+    let slots: [ComputerUsageWeekSlot]
+    let stackLayers: [WeekStackLayer]
+    let topPlotYByIndex: [Int: Double]
+    let gap: Double
+    let chartProxy: ChartProxy
+    let geometry: GeometryProxy
+
+    var body: some View {
+        if let plotFrameAnchor = chartProxy.plotFrame {
+            let plotBounds = geometry[plotFrameAnchor]
+            let regions = Array(slots.enumerated()).compactMap { idx, slot -> MacUsageBreakdownHitRegion? in
+                let centerXData = TwelveWeekCombinedChart.weekBarBucketCenter(plotIndex: idx)
+                let xStartData = TwelveWeekCombinedChart.weekBarXStart(plotIndex: idx, gap: gap)
+                let xEndData = TwelveWeekCombinedChart.weekBarXEnd(plotIndex: idx, gap: gap)
+                guard let xStart = chartProxy.position(for: (x: xStartData, y: 0.0)),
+                      let xEnd = chartProxy.position(for: (x: xEndData, y: 0.0)),
+                      let yBottom = chartProxy.position(for: (x: centerXData, y: 0.0)),
+                      let yTop = chartProxy.position(for: (x: centerXData, y: 10.0))
+                else { return nil }
+                let minutes = MacEstimatedWorkloadMinutes.columnBreakdown(
+                    keystrokes: slot.keystrokeCount,
+                    clicks: slot.mouseClickCount,
+                    travelPixels: slot.travelPixels,
+                    rates: .fromUserDefaults()
+                )
+                return MacUsageBreakdownHitRegion(
+                    frame: CGRect(
+                        x: plotBounds.origin.x + min(xStart.x, xEnd.x),
+                        y: plotBounds.origin.y + min(yBottom.y, yTop.y),
+                        width: max(8, abs(xEnd.x - xStart.x)),
+                        height: max(8, abs(yTop.y - yBottom.y))
+                    ),
+                    keyboardMinutes: minutes.keyboard,
+                    mouseMinutes: minutes.mouse
+                )
+            }
+            MacUsageBreakdownRightClickLayer(regions: regions)
+        }
+    }
+}
+
+private struct BuiltWeekMetricStage {
+    let unscaledHeight: Double
+    let stress: Double
+    let metric: StackWeekMetric
+}
+
+private func buildWeekStackLayers(
+    slots: [ComputerUsageWeekSlot],
+    usageVisibility: TwelveWeekUsageModalityVisibility
+) -> [WeekStackLayer] {
     /// Fixed **10 ÷ 3** band per modality (same height meaning as toggling overlays off in the twelve‑hour chart).
-    let bandSlice = TwelveDayCombinedChart.usageBandThird
+    let bandSlice = TwelveWeekCombinedChart.usageBandThird
     let maxComposite = 10.0
     guard usageVisibility.showKeystrokes || usageVisibility.showMouseClicks || usageVisibility.showTravel else {
         return []
     }
 
-    var rows: [DayStackLayer] = []
+    var rows: [WeekStackLayer] = []
 
     for (i, slot) in slots.enumerated() {
-        let keysFrac = dayCappedFraction(Double(slot.keystrokeCount), cap: TwelveDayCombinedChart.keystrokesDayCap)
-        let clickFrac = dayCappedFraction(Double(slot.mouseClickCount), cap: TwelveDayCombinedChart.clicksDayCap)
-        let travelFrac = dayCappedFraction(slot.travelPixels, cap: TwelveDayCombinedChart.travelDayCap)
+        let keysFrac = weekCappedFraction(Double(slot.keystrokeCount), cap: TwelveWeekCombinedChart.keystrokesWeekCap)
+        let clickFrac = weekCappedFraction(Double(slot.mouseClickCount), cap: TwelveWeekCombinedChart.clicksWeekCap)
+        let travelFrac = weekCappedFraction(slot.travelPixels, cap: TwelveWeekCombinedChart.travelWeekCap)
 
         let sKeys = MacFiveMinuteBarStyle.stressAmount(
             from: Double(slot.keystrokeCount),
-            cap: TwelveDayCombinedChart.keystrokesDayCap,
-            excessWidth: TwelveDayCombinedChart.keystrokesDayExcess
+            cap: TwelveWeekCombinedChart.keystrokesWeekCap,
+            excessWidth: TwelveWeekCombinedChart.keystrokesWeekExcess
         )
         let sClicks = MacFiveMinuteBarStyle.stressAmount(
             from: Double(slot.mouseClickCount),
-            cap: TwelveDayCombinedChart.clicksDayCap,
-            excessWidth: TwelveDayCombinedChart.clicksDayExcess
+            cap: TwelveWeekCombinedChart.clicksWeekCap,
+            excessWidth: TwelveWeekCombinedChart.clicksWeekExcess
         )
         let sTravel = MacFiveMinuteBarStyle.stressAmount(
             from: slot.travelPixels,
-            cap: TwelveDayCombinedChart.travelDayCap,
-            excessWidth: TwelveDayCombinedChart.travelDayExcess
+            cap: TwelveWeekCombinedChart.travelWeekCap,
+            excessWidth: TwelveWeekCombinedChart.travelWeekExcess
         )
 
         // Stack bottom → top: pointer travel → clicks → keys (same order as twelve‑hour chart).
-        var stages: [BuiltDayMetricStage] = []
+        var stages: [BuiltWeekMetricStage] = []
         if usageVisibility.showTravel {
             let h = travelFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sTravel, metric: .travel(slot.travelPixels)))
+                stages.append(BuiltWeekMetricStage(unscaledHeight: h, stress: sTravel, metric: .travel(slot.travelPixels)))
             }
         }
         if usageVisibility.showMouseClicks {
             let h = clickFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sClicks, metric: .mouseClicks(slot.mouseClickCount)))
+                stages.append(BuiltWeekMetricStage(unscaledHeight: h, stress: sClicks, metric: .mouseClicks(slot.mouseClickCount)))
             }
         }
         if usageVisibility.showKeystrokes {
             let h = keysFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sKeys, metric: .keystrokes(slot.keystrokeCount)))
+                stages.append(BuiltWeekMetricStage(unscaledHeight: h, stress: sKeys, metric: .keystrokes(slot.keystrokeCount)))
             }
         }
 
@@ -435,7 +467,7 @@ private func buildDayStackLayers(
         for stage in stages {
             let scaledH = stage.unscaledHeight * squeeze
             guard scaledH > 0.000_1 else { continue }
-            rows.append(DayStackLayer(
+            rows.append(WeekStackLayer(
                 plotIndex: i,
                 metric: stage.metric,
                 yLow: yCursor,
@@ -448,27 +480,27 @@ private func buildDayStackLayers(
     return rows
 }
 
-private struct TwelveDayPainPrepared {
-    let slots: [ComputerUsageDaySlot]
-    let stackLayers: [DayStackLayer]
-    /// One array per ``TwelveDayPainCurve`` (possibly empty when all days lack data).
-    let painSamplesByCurve: [TwelveDayPainCurve: [DayPainSample]]
+private struct TwelveWeekPainPrepared {
+    let slots: [ComputerUsageWeekSlot]
+    let stackLayers: [WeekStackLayer]
+    /// One array per ``TwelveWeekPainCurve`` (possibly empty when all days lack data).
+    let painSamplesByCurve: [TwelveWeekPainCurve: [WeekPainSample]]
 
     @MainActor
     init(
-        slots: [ComputerUsageDaySlot],
-        painsByCurve: [TwelveDayPainCurve: [Double?]],
-        usageVisibility: TwelveDayUsageModalityVisibility = .allVisible
+        slots: [ComputerUsageWeekSlot],
+        painsByCurve: [TwelveWeekPainCurve: [Double?]],
+        usageVisibility: TwelveWeekUsageModalityVisibility = .allVisible
     ) {
-        for curve in TwelveDayPainCurve.allCases {
+        for curve in TwelveWeekPainCurve.allCases {
             precondition(painsByCurve[curve]?.count == slots.count, "pain array length must match day slots")
         }
         self.slots = slots
-        stackLayers = buildDayStackLayers(slots: slots, usageVisibility: usageVisibility)
+        stackLayers = buildWeekStackLayers(slots: slots, usageVisibility: usageVisibility)
 
-        var byCurve: [TwelveDayPainCurve: [DayPainSample]] = [:]
-        for curve in TwelveDayPainCurve.allCases {
-            byCurve[curve] = TwelveDayPainPrepared.curveSamples(
+        var byCurve: [TwelveWeekPainCurve: [WeekPainSample]] = [:]
+        for curve in TwelveWeekPainCurve.allCases {
+            byCurve[curve] = TwelveWeekPainPrepared.curveSamples(
                 slots: slots,
                 vals: painsByCurve[curve]!,
                 curve: curve
@@ -478,28 +510,26 @@ private struct TwelveDayPainPrepared {
     }
 
     @MainActor
-    init(store: HandTrackStore, referenceDate: Date, usageVisibility: TwelveDayUsageModalityVisibility) {
-        let s = store.computerUsageByTrailingCalendarDays(reference: referenceDate, count: 12)
-        let ds = s.map(\.dayStart)
-        let pains: [TwelveDayPainCurve: [Double?]] = [
-            .worstLeft: store.dailyPainWorstLoggedLeftHand(forOrderedCalendarDayStarts: ds),
-            .worstRight: store.dailyPainWorstLoggedRightHand(forOrderedCalendarDayStarts: ds),
-            .averageLeft: store.dailyPainMeanLoggedLeftHand(forOrderedCalendarDayStarts: ds),
-            .averageRight: store.dailyPainMeanLoggedRightHand(forOrderedCalendarDayStarts: ds),
-            .firstLeft: store.dailyPainFirstLoggedLeftHand(forOrderedCalendarDayStarts: ds),
-            .firstRight: store.dailyPainFirstLoggedRightHand(forOrderedCalendarDayStarts: ds),
+    init(store: HandTrackStore, referenceDate: Date, usageVisibility: TwelveWeekUsageModalityVisibility) {
+        let s = store.computerUsageByTrailingCalendarWeeks(reference: referenceDate, count: 12)
+        let ds = s.map(\.weekStart)
+        let pains: [TwelveWeekPainCurve: [Double?]] = [
+            .worstLeft: store.weeklyPainWorstLoggedLeftHand(forOrderedWeekStarts: ds),
+            .worstRight: store.weeklyPainWorstLoggedRightHand(forOrderedWeekStarts: ds),
+            .averageLeft: store.weeklyPainMeanLoggedLeftHand(forOrderedWeekStarts: ds),
+            .averageRight: store.weeklyPainMeanLoggedRightHand(forOrderedWeekStarts: ds),
         ]
         self.init(slots: s, painsByCurve: pains, usageVisibility: usageVisibility)
     }
 
     private static func curveSamples(
-        slots: [ComputerUsageDaySlot],
+        slots: [ComputerUsageWeekSlot],
         vals: [Double?],
-        curve: TwelveDayPainCurve
-    ) -> [DayPainSample] {
-        zip(slots.indices, vals).compactMap { idx, optionalPain -> DayPainSample? in
+        curve: TwelveWeekPainCurve
+    ) -> [WeekPainSample] {
+        zip(slots.indices, vals).compactMap { idx, optionalPain -> WeekPainSample? in
             guard let p = optionalPain else { return nil }
-            return DayPainSample(plotIndex: idx, pain: p, curve: curve)
+            return WeekPainSample(plotIndex: idx, pain: p, curve: curve)
         }
         .sorted { $0.plotIndex < $1.plotIndex }
     }
@@ -507,43 +537,39 @@ private struct TwelveDayPainPrepared {
 
 // MARK: - Pain visibility (6 lightweight toggles)
 
-private struct TwelveDayPainVisibility: Equatable {
+private struct TwelveWeekPainVisibility: Equatable {
     var worstLeft = false
     var averageLeft = false
-    var firstLeft = false
     var worstRight = false
     var averageRight = false
-    var firstRight = false
 
-    func samplesActive(for curve: TwelveDayPainCurve) -> Bool {
+    func samplesActive(for curve: TwelveWeekPainCurve) -> Bool {
         switch curve {
         case .worstLeft: worstLeft
         case .averageLeft: averageLeft
-        case .firstLeft: firstLeft
         case .worstRight: worstRight
         case .averageRight: averageRight
-        case .firstRight: firstRight
         }
     }
 }
 
 // MARK: - Chart content slices (keeps Swift type-check feasible)
 
-private struct TwelveDayBaselineRuleChartContent: ChartContent {
+private struct TwelveWeekBaselineRuleChartContent: ChartContent {
     var body: some ChartContent {
         RuleMark(y: .value("Baseline", 0.0))
-            .foregroundStyle(TwelveDayCombinedChart.axisBaseline)
+            .foregroundStyle(TwelveWeekCombinedChart.axisBaseline)
             .lineStyle(StrokeStyle(lineWidth: 1))
     }
 }
 
-private struct TwelveDayStackedUsageSegmentOverlay: View {
-    let layer: DayStackLayer
-    let slots: [ComputerUsageDaySlot]
+private struct TwelveWeekStackedUsageSegmentOverlay: View {
+    let layer: WeekStackLayer
+    let slots: [ComputerUsageWeekSlot]
     let labelOffsetX: CGFloat
 
     private var showsInteriorCaption: Bool {
-        layer.yHigh - layer.yLow >= TwelveDayCombinedChart.minimumStackHeightForInteriorLabel
+        layer.yHigh - layer.yLow >= TwelveWeekCombinedChart.minimumStackHeightForInteriorLabel
     }
 
     var body: some View {
@@ -566,11 +592,10 @@ private struct TwelveDayStackedUsageSegmentOverlay: View {
     }
 }
 
-private struct TwelveDayStackedUsageRectanglesChartContent: ChartContent {
-    let layers: [DayStackLayer]
+private struct TwelveWeekStackedUsageRectanglesChartContent: ChartContent {
+    let layers: [WeekStackLayer]
     let gap: Double
-    let slots: [ComputerUsageDaySlot]
-    let workloadRates: MacEstimatedWorkloadMinutes.Rates
+    let slots: [ComputerUsageWeekSlot]
     let segmentInteriorLabelOffsetXByLayerID: [String: CGFloat]
     let topmostLayerIDByPlotIndex: [Int: String]
 
@@ -581,15 +606,15 @@ private struct TwelveDayStackedUsageRectanglesChartContent: ChartContent {
     }
 
     @ChartContentBuilder
-    private func rectangle(for layer: DayStackLayer) -> some ChartContent {
+    private func rectangle(for layer: WeekStackLayer) -> some ChartContent {
         RectangleMark(
             xStart: .value(
                 "Start",
-                TwelveDayCombinedChart.dayBarXStart(plotIndex: layer.plotIndex, gap: gap)
+                TwelveWeekCombinedChart.weekBarXStart(plotIndex: layer.plotIndex, gap: gap)
             ),
             xEnd: .value(
                 "End",
-                TwelveDayCombinedChart.dayBarXEnd(plotIndex: layer.plotIndex, gap: gap)
+                TwelveWeekCombinedChart.weekBarXEnd(plotIndex: layer.plotIndex, gap: gap)
             ),
             yStart: .value("Bottom", layer.yLow),
             yEnd: .value("Top", layer.yHigh)
@@ -602,17 +627,15 @@ private struct TwelveDayStackedUsageRectanglesChartContent: ChartContent {
         )
         .cornerRadius(6, style: .continuous)
         .annotation(position: .overlay, alignment: .center, spacing: 0) {
-            TwelveDayStackedUsageSegmentOverlay(
+            TwelveWeekStackedUsageSegmentOverlay(
                 layer: layer,
                 slots: slots,
                 labelOffsetX: segmentInteriorLabelOffsetXByLayerID[layer.id] ?? 0
             )
         }
         .annotation(position: .top, alignment: .center, spacing: 5) {
-            if topmostLayerIDByPlotIndex[layer.plotIndex] == layer.id,
-               slots.indices.contains(layer.plotIndex)
-            {
-                Text(twelveDayEstimatedTimeLabel(slot: slots[layer.plotIndex], rates: workloadRates))
+            if topmostLayerIDByPlotIndex[layer.plotIndex] == layer.id {
+                Text(twelveWeekEstimatedTimeLabel(plotY: layer.yHigh))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
@@ -622,69 +645,9 @@ private struct TwelveDayStackedUsageRectanglesChartContent: ChartContent {
     }
 }
 
-/// Day totals from raw counts ÷ Average‑minute rates (same settings as the 12‑hour slider).
-private func twelveDayEstimatedTimeLabel(slot: ComputerUsageDaySlot, rates: MacEstimatedWorkloadMinutes.Rates) -> String {
-    let total = MacEstimatedWorkloadMinutes.totalMinutes(
-        keystrokes: slot.keystrokeCount,
-        clicks: slot.mouseClickCount,
-        travelPixels: slot.travelPixels,
-        rates: rates
-    )
-    return MacEstimatedWorkloadMinutes.compactDurationLabel(totalMinutes: total)
-}
-
-
-private func twelveDayColumnUsageMinutes(
-    slot: ComputerUsageDaySlot,
-    rates: MacEstimatedWorkloadMinutes.Rates
-) -> (keyboard: Int, mouse: Int) {
-    MacEstimatedWorkloadMinutes.columnBreakdown(
-        keystrokes: slot.keystrokeCount,
-        clicks: slot.mouseClickCount,
-        travelPixels: slot.travelPixels,
-        rates: rates
-    )
-}
-
-private struct TwelveDayColumnContextMenuOverlay: View {
-    let slots: [ComputerUsageDaySlot]
-    let workloadRates: MacEstimatedWorkloadMinutes.Rates
-    let gap: Double
-    let chartProxy: ChartProxy
-    let geometry: GeometryProxy
-
-    var body: some View {
-        if let plotFrameAnchor = chartProxy.plotFrame {
-            let plotBounds = geometry[plotFrameAnchor]
-            let regions = Array(slots.enumerated()).compactMap { idx, slot -> MacUsageBreakdownHitRegion? in
-                let centerXData = TwelveDayCombinedChart.dayBarBucketCenter(plotIndex: idx)
-                let xStartData = TwelveDayCombinedChart.dayBarXStart(plotIndex: idx, gap: gap)
-                let xEndData = TwelveDayCombinedChart.dayBarXEnd(plotIndex: idx, gap: gap)
-                guard let xStart = chartProxy.position(for: (x: xStartData, y: 0.0)),
-                      let xEnd = chartProxy.position(for: (x: xEndData, y: 0.0)),
-                      let yBottom = chartProxy.position(for: (x: centerXData, y: 0.0)),
-                      let yTop = chartProxy.position(for: (x: centerXData, y: 10.0))
-                else { return nil }
-                let minutes = twelveDayColumnUsageMinutes(slot: slot, rates: workloadRates)
-                return MacUsageBreakdownHitRegion(
-                    frame: CGRect(
-                        x: plotBounds.origin.x + min(xStart.x, xEnd.x),
-                        y: plotBounds.origin.y + min(yBottom.y, yTop.y),
-                        width: max(8, abs(xEnd.x - xStart.x)),
-                        height: max(8, abs(yTop.y - yBottom.y))
-                    ),
-                    keyboardMinutes: minutes.keyboard,
-                    mouseMinutes: minutes.mouse
-                )
-            }
-            MacUsageBreakdownRightClickLayer(regions: regions)
-        }
-    }
-}
-
-private struct TwelveDayPainConnectorLinesChartContent: ChartContent {
-    let curves: [TwelveDayPainCurve]
-    let samplesByCurve: [TwelveDayPainCurve: [DayPainSample]]
+private struct TwelveWeekPainConnectorLinesChartContent: ChartContent {
+    let curves: [TwelveWeekPainCurve]
+    let samplesByCurve: [TwelveWeekPainCurve: [WeekPainSample]]
     let gap: Double
 
     var body: some ChartContent {
@@ -694,7 +657,7 @@ private struct TwelveDayPainConnectorLinesChartContent: ChartContent {
     }
 
     @ChartContentBuilder
-    private func lines(for curve: TwelveDayPainCurve, samples: [DayPainSample]) -> some ChartContent {
+    private func lines(for curve: TwelveWeekPainCurve, samples: [WeekPainSample]) -> some ChartContent {
         if samples.count >= 2 {
             ForEach(samples) { sample in
                 LineMark(
@@ -710,12 +673,12 @@ private struct TwelveDayPainConnectorLinesChartContent: ChartContent {
     }
 }
 
-/// One visible pain dot — isolates ``PointMark`` + annotation typing (see ``TwelveDayPainDotsChartContent``).
-private struct TwelveDayPainOneDotChartContent: ChartContent, Identifiable {
-    let curve: TwelveDayPainCurve
-    let sample: DayPainSample
+/// One visible pain dot — isolates ``PointMark`` + annotation typing (see ``TwelveWeekPainDotsChartContent``).
+private struct TwelveWeekPainOneDotChartContent: ChartContent, Identifiable {
+    let curve: TwelveWeekPainCurve
+    let sample: WeekPainSample
     let gap: Double
-    let slots: [ComputerUsageDaySlot]
+    let slots: [ComputerUsageWeekSlot]
 
     var id: String { sample.id }
 
@@ -728,21 +691,21 @@ private struct TwelveDayPainOneDotChartContent: ChartContent, Identifiable {
         .symbolSize(176)
         .foregroundStyle(Color.clear)
         .annotation(position: .overlay, alignment: .center, spacing: 0) {
-            TwelveDayPainDotOverlay(sample: sample, curve: curve, slots: slots)
+            TwelveWeekPainDotOverlay(sample: sample, curve: curve, slots: slots)
         }
     }
 }
 
-private struct TwelveDayPainDotsChartContent: ChartContent {
-    let curves: [TwelveDayPainCurve]
-    let samplesByCurve: [TwelveDayPainCurve: [DayPainSample]]
+private struct TwelveWeekPainDotsChartContent: ChartContent {
+    let curves: [TwelveWeekPainCurve]
+    let samplesByCurve: [TwelveWeekPainCurve: [WeekPainSample]]
     let gap: Double
-    let slots: [ComputerUsageDaySlot]
+    let slots: [ComputerUsageWeekSlot]
 
-    private var flattenedDots: [TwelveDayPainOneDotChartContent] {
+    private var flattenedDots: [TwelveWeekPainOneDotChartContent] {
         curves.flatMap { curve in
             (samplesByCurve[curve] ?? []).map { sample in
-                TwelveDayPainOneDotChartContent(curve: curve, sample: sample, gap: gap, slots: slots)
+                TwelveWeekPainOneDotChartContent(curve: curve, sample: sample, gap: gap, slots: slots)
             }
         }
     }
@@ -755,23 +718,23 @@ private struct TwelveDayPainDotsChartContent: ChartContent {
 }
 
 @AxisContentBuilder
-private func twelveDayChartDualXAxisMarks(slots: [ComputerUsageDaySlot]) -> some AxisContent {
-    AxisMarks(values: TwelveDayCombinedChart.dayBoundaryTickPositions(barCount: slots.count)) { _ in
+private func twelveWeekChartDualXAxisMarks(slots: [ComputerUsageWeekSlot]) -> some AxisContent {
+    AxisMarks(values: TwelveWeekCombinedChart.weekBoundaryTickPositions(barCount: slots.count)) { _ in
         AxisTick(length: 6, stroke: StrokeStyle(lineWidth: 1))
-            .foregroundStyle(TwelveDayCombinedChart.axisBaseline)
+            .foregroundStyle(TwelveWeekCombinedChart.axisBaseline)
     }
 }
 
 /// Same numeric ladder on left + right bar edges; captions distinguish **bars usage** vs **pain** interpretations.
 @AxisContentBuilder
-private func twelveDayDualPainYAxes() -> some AxisContent {
+private func twelveWeekDualPainYAxes() -> some AxisContent {
     let tickValues = stride(from: 0.0, through: 10.0, by: 2.0).map { $0 }
 
     AxisMarks(position: .leading, values: tickValues) { value in
         AxisTick().foregroundStyle(.secondary.opacity(0.55))
         AxisValueLabel {
             if let y = value.as(Double.self) {
-                Text(twelveDayLeadingUsageHoursTickLabel(chartY: y))
+                Text(twelveWeekLeadingUsageHoursTickLabel(chartY: y))
             }
         }
     }
@@ -780,20 +743,20 @@ private func twelveDayDualPainYAxes() -> some AxisContent {
         AxisTick().foregroundStyle(.secondary.opacity(0.55))
         AxisValueLabel {
             if let y = value.as(Double.self) {
-                Text(twelveDayYAxisNumericTickLabel(y))
+                Text(twelveWeekYAxisNumericTickLabel(y))
             }
         }
     }
 }
 
 /// Maps plot Y `0…10` ↔ **0…5 h** on the bars side (ticks every 2 Y → 1 h).
-private func twelveDayLeadingUsageHoursTickLabel(chartY: Double) -> String {
+private func twelveWeekLeadingUsageHoursTickLabel(chartY: Double) -> String {
     guard chartY.isFinite else { return "—" }
-    let h = Int((chartY / 2.0).rounded(.toNearestOrAwayFromZero))
+    let h = Int((chartY * 3.0).rounded(.toNearestOrAwayFromZero))
     return "\(h) h"
 }
 
-private func twelveDayYAxisNumericTickLabel(_ value: Double) -> String {
+private func twelveWeekYAxisNumericTickLabel(_ value: Double) -> String {
     guard value.isFinite else { return "—" }
     let r = round(value)
     guard abs(value - r) >= 1e-3 else {
@@ -802,9 +765,9 @@ private func twelveDayYAxisNumericTickLabel(_ value: Double) -> String {
     return String(format: "%g", value)
 }
 
-/// Uses ``ChartProxy`` so `EEE M/d` aligns with geometric bar centres (Charts’ built‑in markers sit on boundary ticks).
-private struct TwelveDayBarCenterDayLabelsOverlay: View {
-    let slots: [ComputerUsageDaySlot]
+/// Uses ``ChartProxy`` so Sun–Sat range labels align with geometric bar centres.
+private struct TwelveWeekBarCenterWeekLabelsOverlay: View {
+    let slots: [ComputerUsageWeekSlot]
     let chartProxy: ChartProxy
     let geometry: GeometryProxy
 
@@ -814,9 +777,13 @@ private struct TwelveDayBarCenterDayLabelsOverlay: View {
             ForEach(Array(slots.enumerated()), id: \.offset) { pair in
                 let idx = pair.offset
                 let slot = pair.element
-                let centerXData = TwelveDayCombinedChart.dayBarBucketCenter(plotIndex: idx)
+                let centerXData = TwelveWeekCombinedChart.weekBarBucketCenter(plotIndex: idx)
                 if let plotted = chartProxy.position(for: (x: centerXData, y: 0.0)) {
-                    Text(TwelveDayCombinedChart.axisLabelFormatter.string(from: slot.dayStart))
+                    let rangeStart = TwelveWeekCombinedChart.sundayStart(forMondayWeekStart: slot.weekStart)
+                    let rangeEnd = TwelveWeekCombinedChart.saturdayEnd(forMondayWeekStart: slot.weekStart)
+                    let startLabel = TwelveWeekCombinedChart.weekAxisDayFormatter.string(from: rangeStart)
+                    let endLabel = TwelveWeekCombinedChart.weekAxisDayFormatter.string(from: rangeEnd)
+                    Text("\(startLabel) - \(endLabel)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize()
@@ -825,25 +792,24 @@ private struct TwelveDayBarCenterDayLabelsOverlay: View {
                             x: plotBounds.origin.x + plotted.x,
                             y: plotBounds.maxY + 11
                         )
-                        .allowsHitTesting(false)
+                    .allowsHitTesting(false)
                 }
             }
         }
     }
 }
 
-/// Owns `Chart { … }` plus axis/scales — keeps ``TwelveDayPainChartPanel`` from inheriting giant `some View` composition.
-private struct TwelveDayPainChartSurface: View {
-    let slots: [ComputerUsageDaySlot]
-    let stackLayers: [DayStackLayer]
-    let workloadRates: MacEstimatedWorkloadMinutes.Rates
-    let painSamplesByCurve: [TwelveDayPainCurve: [DayPainSample]]
-    let activeCurves: [TwelveDayPainCurve]
+/// Owns `Chart { … }` plus axis/scales — keeps ``TwelveWeekPainChartPanel`` from inheriting giant `some View` composition.
+private struct TwelveWeekPainChartSurface: View {
+    let slots: [ComputerUsageWeekSlot]
+    let stackLayers: [WeekStackLayer]
+    let painSamplesByCurve: [TwelveWeekPainCurve: [WeekPainSample]]
+    let activeCurves: [TwelveWeekPainCurve]
     let gap: Double
     let segmentInteriorLabelOffsetXByLayerID: [String: CGFloat]
 
     private var topmostLayerIDByPlotIndex: [Int: String] {
-        var byIndex: [Int: DayStackLayer] = [:]
+        var byIndex: [Int: WeekStackLayer] = [:]
         for layer in stackLayers {
             if (byIndex[layer.plotIndex]?.yHigh ?? -.infinity) < layer.yHigh {
                 byIndex[layer.plotIndex] = layer
@@ -852,23 +818,32 @@ private struct TwelveDayPainChartSurface: View {
         return byIndex.mapValues(\.id)
     }
 
+    private var topPlotYByIndex: [Int: Double] {
+        var byIndex: [Int: WeekStackLayer] = [:]
+        for layer in stackLayers {
+            if (byIndex[layer.plotIndex]?.yHigh ?? -.infinity) < layer.yHigh {
+                byIndex[layer.plotIndex] = layer
+            }
+        }
+        return byIndex.mapValues(\.yHigh)
+    }
+
     var body: some View {
         Chart {
-            TwelveDayBaselineRuleChartContent()
-            TwelveDayStackedUsageRectanglesChartContent(
+            TwelveWeekBaselineRuleChartContent()
+            TwelveWeekStackedUsageRectanglesChartContent(
                 layers: stackLayers,
                 gap: gap,
                 slots: slots,
-                workloadRates: workloadRates,
                 segmentInteriorLabelOffsetXByLayerID: segmentInteriorLabelOffsetXByLayerID,
                 topmostLayerIDByPlotIndex: topmostLayerIDByPlotIndex
             )
-            TwelveDayPainConnectorLinesChartContent(
+            TwelveWeekPainConnectorLinesChartContent(
                 curves: activeCurves,
                 samplesByCurve: painSamplesByCurve,
                 gap: gap
             )
-            TwelveDayPainDotsChartContent(
+            TwelveWeekPainDotsChartContent(
                 curves: activeCurves,
                 samplesByCurve: painSamplesByCurve,
                 gap: gap,
@@ -878,7 +853,7 @@ private struct TwelveDayPainChartSurface: View {
         .chartLegend(.hidden)
         .chartYScale(domain: 0...10)
         .chartYAxis {
-            twelveDayDualPainYAxes()
+            twelveWeekDualPainYAxes()
         }
         .chartYAxisLabel(position: .leading, spacing: 10) {
             MacFiveMinuteChartLeadingCaption.rotated180Degrees {
@@ -909,20 +884,21 @@ private struct TwelveDayPainChartSurface: View {
             }
         }
         .chartXScale(
-            domain: TwelveDayCombinedChart.chartXDomainLower(barCount: slots.count)
-                ... TwelveDayCombinedChart.chartXDomainUpper(barCount: slots.count)
+            domain: TwelveWeekCombinedChart.chartXDomainLower(barCount: slots.count)
+                ... TwelveWeekCombinedChart.chartXDomainUpper(barCount: slots.count)
         )
         .chartXAxis {
-            twelveDayChartDualXAxisMarks(slots: slots)
+            twelveWeekChartDualXAxisMarks(slots: slots)
         }
-        .frame(height: 276)
+        .frame(height: 320)
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 ZStack(alignment: .topLeading) {
-                    TwelveDayBarCenterDayLabelsOverlay(slots: slots, chartProxy: proxy, geometry: geometry)
-                    TwelveDayColumnContextMenuOverlay(
+                    TwelveWeekBarCenterWeekLabelsOverlay(slots: slots, chartProxy: proxy, geometry: geometry)
+                    TwelveWeekColumnContextMenuOverlay(
                         slots: slots,
-                        workloadRates: workloadRates,
+                        stackLayers: stackLayers,
+                        topPlotYByIndex: topPlotYByIndex,
                         gap: gap,
                         chartProxy: proxy,
                         geometry: geometry
@@ -933,19 +909,43 @@ private struct TwelveDayPainChartSurface: View {
     }
 }
 
+/// Isolated chart body — equatable so keystroke/mouse churn does not rebuild this Chart every event.
+private struct MacTwelveWeekChartPanelRender: View, Equatable {
+    let store: HandTrackStore
+    let referenceHour: Date
+    let painLogsRevision: UInt64
+    let usageBarsVisibility: TwelveWeekUsageModalityVisibility
+    let painVisibility: TwelveWeekPainVisibility
+
+    var body: some View {
+        let prepared = TwelveWeekPainPrepared(
+            store: store,
+            referenceDate: referenceHour,
+            usageVisibility: usageBarsVisibility
+        )
+        TwelveWeekPainChartPanel(prepared: prepared, painVisibility: painVisibility)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.referenceHour == rhs.referenceHour
+            && lhs.painLogsRevision == rhs.painLogsRevision
+            && lhs.usageBarsVisibility == rhs.usageBarsVisibility
+            && lhs.painVisibility == rhs.painVisibility
+    }
+}
+
 // MARK: - Chart panel
 
-private struct TwelveDayPainChartPanel: View {
-    let prepared: TwelveDayPainPrepared
-    var painVisibility: TwelveDayPainVisibility
-    let workloadRates: MacEstimatedWorkloadMinutes.Rates
+private struct TwelveWeekPainChartPanel: View {
+    let prepared: TwelveWeekPainPrepared
+    var painVisibility: TwelveWeekPainVisibility
 
-    private var slots: [ComputerUsageDaySlot] { prepared.slots }
+    private var slots: [ComputerUsageWeekSlot] { prepared.slots }
 
-    private var gap: Double { TwelveDayCombinedChart.xSlotGap }
+    private var gap: Double { TwelveWeekCombinedChart.xSlotGap }
 
-    private var activeCurves: [TwelveDayPainCurve] {
-        TwelveDayPainCurve.allCases.filter { painVisibility.samplesActive(for: $0) }
+    private var activeCurves: [TwelveWeekPainCurve] {
+        TwelveWeekPainCurve.allCases.filter { painVisibility.samplesActive(for: $0) }
     }
 
     private var segmentInteriorLabelOffsetXByLayerID: [String: CGFloat] { [:] }
@@ -955,10 +955,9 @@ private struct TwelveDayPainChartPanel: View {
     }
 
     private var chartBody: some View {
-        TwelveDayPainChartSurface(
+        TwelveWeekPainChartSurface(
             slots: slots,
             stackLayers: prepared.stackLayers,
-            workloadRates: workloadRates,
             painSamplesByCurve: prepared.painSamplesByCurve,
             activeCurves: activeCurves,
             gap: gap,
@@ -969,8 +968,8 @@ private struct TwelveDayPainChartPanel: View {
 
 // MARK: - Pain graph toggles
 
-private struct TwelveDayPainGraphsToggleMatrix: View {
-    @Binding var visibility: TwelveDayPainVisibility
+private struct TwelveWeekPainGraphsToggleMatrix: View {
+    @Binding var visibility: TwelveWeekPainVisibility
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -982,12 +981,11 @@ private struct TwelveDayPainGraphsToggleMatrix: View {
                     .frame(width: 38, alignment: .leading)
                 columnHeader("Max")
                 columnHeader("Avg")
-                columnHeader("Morning")
             }
             .foregroundStyle(.secondary)
 
-            toggleRow(sideLabel: "Left", keys: [.worstLeft, .averageLeft, .firstLeft])
-            toggleRow(sideLabel: "Right", keys: [.worstRight, .averageRight, .firstRight])
+            toggleRow(sideLabel: "Left", keys: [.worstLeft, .averageLeft])
+            toggleRow(sideLabel: "Right", keys: [.worstRight, .averageRight])
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -1007,7 +1005,7 @@ private struct TwelveDayPainGraphsToggleMatrix: View {
             .frame(width: 52, alignment: .center)
     }
 
-    private func toggleRow(sideLabel: String, keys: [TwelveDayPainVisibilityKey]) -> some View {
+    private func toggleRow(sideLabel: String, keys: [TwelveWeekPainVisibilityKey]) -> some View {
         let allOn = keys.allSatisfy { bool(for: $0) }
         return HStack(spacing: 4) {
             Button {
@@ -1030,42 +1028,36 @@ private struct TwelveDayPainGraphsToggleMatrix: View {
         }
     }
 
-    private func bool(for key: TwelveDayPainVisibilityKey) -> Bool {
+    private func bool(for key: TwelveWeekPainVisibilityKey) -> Bool {
         switch key {
         case .worstLeft: visibility.worstLeft
         case .averageLeft: visibility.averageLeft
-        case .firstLeft: visibility.firstLeft
         case .worstRight: visibility.worstRight
         case .averageRight: visibility.averageRight
-        case .firstRight: visibility.firstRight
         }
     }
 
-    private func flipRow(keys: [TwelveDayPainVisibilityKey], isOn: Bool) {
+    private func flipRow(keys: [TwelveWeekPainVisibilityKey], isOn: Bool) {
         var next = visibility
         for key in keys {
             switch key {
             case .worstLeft: next.worstLeft = isOn
             case .averageLeft: next.averageLeft = isOn
-            case .firstLeft: next.firstLeft = isOn
             case .worstRight: next.worstRight = isOn
             case .averageRight: next.averageRight = isOn
-            case .firstRight: next.firstRight = isOn
             }
         }
         visibility = next
     }
 
-    private func boolBinding(for key: TwelveDayPainVisibilityKey) -> Binding<Bool> {
+    private func boolBinding(for key: TwelveWeekPainVisibilityKey) -> Binding<Bool> {
         Binding(
             get: {
                 switch key {
                 case .worstLeft: visibility.worstLeft
                 case .averageLeft: visibility.averageLeft
-                case .firstLeft: visibility.firstLeft
                 case .worstRight: visibility.worstRight
                 case .averageRight: visibility.averageRight
-                case .firstRight: visibility.firstRight
                 }
             },
             set: { newValue in
@@ -1073,10 +1065,8 @@ private struct TwelveDayPainGraphsToggleMatrix: View {
                 switch key {
                 case .worstLeft: next.worstLeft = newValue
                 case .averageLeft: next.averageLeft = newValue
-                case .firstLeft: next.firstLeft = newValue
                 case .worstRight: next.worstRight = newValue
                 case .averageRight: next.averageRight = newValue
-                case .firstRight: next.firstRight = newValue
                 }
                 visibility = next
             }
@@ -1084,29 +1074,25 @@ private struct TwelveDayPainGraphsToggleMatrix: View {
     }
 }
 
-private enum TwelveDayPainVisibilityKey: Hashable {
+private enum TwelveWeekPainVisibilityKey: Hashable {
     case worstLeft
     case averageLeft
-    case firstLeft
     case worstRight
     case averageRight
-    case firstRight
 }
 
-private enum TwelveDayUsageBarsAppStorage {
-    static let showKeysKey = "HandTrack.mac.twelveDayChartShowKeys"
-    static let showClicksKey = "HandTrack.mac.twelveDayChartShowClicks"
-    static let showTravelKey = "HandTrack.mac.twelveDayChartShowPointerTravel"
+private enum TwelveWeekUsageBarsAppStorage {
+    static let showKeysKey = "HandTrack.mac.twelveWeekChartShowKeys"
+    static let showClicksKey = "HandTrack.mac.twelveWeekChartShowClicks"
+    static let showTravelKey = "HandTrack.mac.twelveWeekChartShowPointerTravel"
 
-    static let worstLeftKey = "HandTrack.mac.twelveDayPainWorstLeft"
-    static let averageLeftKey = "HandTrack.mac.twelveDayPainAverageLeft"
-    static let firstLeftKey = "HandTrack.mac.twelveDayPainFirstLeft"
-    static let worstRightKey = "HandTrack.mac.twelveDayPainWorstRight"
-    static let averageRightKey = "HandTrack.mac.twelveDayPainAverageRight"
-    static let firstRightKey = "HandTrack.mac.twelveDayPainFirstRight"
+    static let worstLeftKey = "HandTrack.mac.twelveWeekPainWorstLeft"
+    static let averageLeftKey = "HandTrack.mac.twelveWeekPainAverageLeft"
+    static let worstRightKey = "HandTrack.mac.twelveWeekPainWorstRight"
+    static let averageRightKey = "HandTrack.mac.twelveWeekPainAverageRight"
 }
 
-private struct TwelveDayUsageBarsToggleStrip: View {
+private struct TwelveWeekUsageBarsToggleStrip: View {
     @Binding var showKeys: Bool
     @Binding var showClicks: Bool
     @Binding var showTravel: Bool
@@ -1147,44 +1133,34 @@ private struct TwelveDayUsageBarsToggleStrip: View {
 
 // MARK: - Public entry
 
-/// Twelve trailing calendar days: stacked usage (same scaling idea as twelve‑hour chart) vs iPhone pain rollup.
-struct MacTwelveDayStackedUsagePainChart: View {
+/// Twelve trailing calendar weeks: stacked usage (same scaling idea as twelve‑hour chart) vs iPhone pain rollup.
+struct MacTwelveWeekStackedUsagePainChart: View {
     @EnvironmentObject private var store: HandTrackStore
 
-    @AppStorage(MacEstimatedWorkloadMinutes.keysPerMinuteKey) private var avgKeysPerMinute = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
-    @AppStorage(MacEstimatedWorkloadMinutes.clicksPerMinuteKey) private var avgClicksPerMinute = MacEstimatedWorkloadMinutes.defaultClicksPerMinute
-    @AppStorage(MacEstimatedWorkloadMinutes.pixelThousandsPerMinuteKey) private var avgPixelThousandsPerMinute = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
+    @AppStorage(TwelveWeekUsageBarsAppStorage.showKeysKey) private var twelveWeekChartShowKeys = true
+    @AppStorage(TwelveWeekUsageBarsAppStorage.showClicksKey) private var twelveWeekChartShowClicks = true
+    @AppStorage(TwelveWeekUsageBarsAppStorage.showTravelKey) private var twelveWeekChartShowTravel = true
 
-    @AppStorage(TwelveDayUsageBarsAppStorage.showKeysKey) private var twelveDayChartShowKeys = true
-    @AppStorage(TwelveDayUsageBarsAppStorage.showClicksKey) private var twelveDayChartShowClicks = true
-    @AppStorage(TwelveDayUsageBarsAppStorage.showTravelKey) private var twelveDayChartShowTravel = true
+    @AppStorage(TwelveWeekUsageBarsAppStorage.worstLeftKey) private var painWorstLeft = true
+    @AppStorage(TwelveWeekUsageBarsAppStorage.averageLeftKey) private var painAverageLeft = true
+    @AppStorage(TwelveWeekUsageBarsAppStorage.worstRightKey) private var painWorstRight = false
+    @AppStorage(TwelveWeekUsageBarsAppStorage.averageRightKey) private var painAverageRight = false
 
-    @AppStorage(TwelveDayUsageBarsAppStorage.worstLeftKey) private var painWorstLeft = true
-    @AppStorage(TwelveDayUsageBarsAppStorage.averageLeftKey) private var painAverageLeft = true
-    @AppStorage(TwelveDayUsageBarsAppStorage.firstLeftKey) private var painFirstLeft = true
-    @AppStorage(TwelveDayUsageBarsAppStorage.worstRightKey) private var painWorstRight = false
-    @AppStorage(TwelveDayUsageBarsAppStorage.averageRightKey) private var painAverageRight = false
-    @AppStorage(TwelveDayUsageBarsAppStorage.firstRightKey) private var painFirstRight = false
-
-    private var painVisibilityBinding: Binding<TwelveDayPainVisibility> {
+    private var painVisibilityBinding: Binding<TwelveWeekPainVisibility> {
         Binding(
             get: {
-                TwelveDayPainVisibility(
+                TwelveWeekPainVisibility(
                     worstLeft: painWorstLeft,
                     averageLeft: painAverageLeft,
-                    firstLeft: painFirstLeft,
                     worstRight: painWorstRight,
-                    averageRight: painAverageRight,
-                    firstRight: painFirstRight
+                    averageRight: painAverageRight
                 )
             },
             set: { newValue in
                 painWorstLeft = newValue.worstLeft
                 painAverageLeft = newValue.averageLeft
-                painFirstLeft = newValue.firstLeft
                 painWorstRight = newValue.worstRight
                 painAverageRight = newValue.averageRight
-                painFirstRight = newValue.firstRight
             }
         )
     }
@@ -1198,58 +1174,55 @@ struct MacTwelveDayStackedUsagePainChart: View {
     @ViewBuilder
     @MainActor
     private func chartContent(referenceDate: Date) -> some View {
-        let usageBarsVisibility = TwelveDayUsageModalityVisibility(
-            showKeystrokes: twelveDayChartShowKeys,
-            showMouseClicks: twelveDayChartShowClicks,
-            showTravel: twelveDayChartShowTravel
+        let usageBarsVisibility = TwelveWeekUsageModalityVisibility(
+            showKeystrokes: twelveWeekChartShowKeys,
+            showMouseClicks: twelveWeekChartShowClicks,
+            showTravel: twelveWeekChartShowTravel
         )
-        let prepared = TwelveDayPainPrepared(store: store, referenceDate: referenceDate, usageVisibility: usageBarsVisibility)
-        let painVisibility = TwelveDayPainVisibility(
+        let painVisibility = TwelveWeekPainVisibility(
             worstLeft: painWorstLeft,
             averageLeft: painAverageLeft,
-            firstLeft: painFirstLeft,
             worstRight: painWorstRight,
-            averageRight: painAverageRight,
-            firstRight: painFirstRight
+            averageRight: painAverageRight
         )
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Past 12 days")
+                Text("Past 12 weeks")
                     .font(.headline)
                 Spacer(minLength: 0)
                 HStack(alignment: .top, spacing: 8) {
-                    TwelveDayUsageBarsToggleStrip(
-                        showKeys: $twelveDayChartShowKeys,
-                        showClicks: $twelveDayChartShowClicks,
-                        showTravel: $twelveDayChartShowTravel
+                    TwelveWeekUsageBarsToggleStrip(
+                        showKeys: $twelveWeekChartShowKeys,
+                        showClicks: $twelveWeekChartShowClicks,
+                        showTravel: $twelveWeekChartShowTravel
                     )
 
-                    TwelveDayPainGraphsToggleMatrix(visibility: painVisibilityBinding)
+                    TwelveWeekPainGraphsToggleMatrix(visibility: painVisibilityBinding)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            TwelveDayPainChartPanel(
-                prepared: prepared,
-                painVisibility: painVisibility,
-                workloadRates: MacEstimatedWorkloadMinutes.Rates.from(
-                    keysPerMinute: avgKeysPerMinute,
-                    clicksPerMinute: avgClicksPerMinute,
-                    pixelThousandsPerMinute: avgPixelThousandsPerMinute
-                )
+            MacTwelveWeekChartPanelRender(
+                store: store,
+                referenceHour: MacChartEquatableBucket.hourStart(referenceDate),
+                painLogsRevision: MacChartEquatableBucket.painLogsRevision(store),
+                usageBarsVisibility: usageBarsVisibility,
+                painVisibility: painVisibility
             )
+            .equatable()
         }
+        .padding(.bottom, 44)
         .onAppear {
             ensureUsageBarsInvariant()
         }
-        .onChange(of: twelveDayChartShowKeys) { _, _ in ensureUsageBarsInvariant() }
-        .onChange(of: twelveDayChartShowClicks) { _, _ in ensureUsageBarsInvariant() }
-        .onChange(of: twelveDayChartShowTravel) { _, _ in ensureUsageBarsInvariant() }
+        .onChange(of: twelveWeekChartShowKeys) { _, _ in ensureUsageBarsInvariant() }
+        .onChange(of: twelveWeekChartShowClicks) { _, _ in ensureUsageBarsInvariant() }
+        .onChange(of: twelveWeekChartShowTravel) { _, _ in ensureUsageBarsInvariant() }
     }
 
     private func ensureUsageBarsInvariant() {
-        if !twelveDayChartShowKeys && !twelveDayChartShowClicks && !twelveDayChartShowTravel {
-            twelveDayChartShowKeys = true
+        if !twelveWeekChartShowKeys && !twelveWeekChartShowClicks && !twelveWeekChartShowTravel {
+            twelveWeekChartShowKeys = true
         }
     }
 }

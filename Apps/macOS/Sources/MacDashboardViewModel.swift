@@ -7,6 +7,8 @@ final class MacDashboardViewModel: ObservableObject {
     private static let recordingAlarmMuteExpiryKey = "HandTrack.recordingAlarmMuteExpiry"
     /// Last mute duration preset the user tapped (highlight persists until mute ends).
     private static let recordingAlarmMuteChosenMinutesKey = "HandTrack.recordingAlarmMuteChosenMinutes"
+    private static let activityLimitsPauseExpiryKey = "HandTrack.activityLimitsPauseExpiry"
+    private static let activityLimitsPauseChosenMinutesKey = "HandTrack.activityLimitsPauseChosenMinutes"
 
     @Published private(set) var syncStatus = "Starting..."
 
@@ -15,6 +17,9 @@ final class MacDashboardViewModel: ObservableObject {
 
     /// Which mute pill was chosen for the active window (`nil` while not muted).
     @Published private(set) var mutedBreakAlarmChosenMinutes: Int?
+    /// Activity is still recorded while this is active, but events do not count toward Activity Limits.
+    @Published private(set) var activityLimitsPauseExpiresAt: Date?
+    @Published private(set) var activityLimitsPauseChosenMinutes: Int?
 
     let activityLimits = MacActivityLimitController()
 
@@ -28,7 +33,14 @@ final class MacDashboardViewModel: ObservableObject {
         } else {
             mutedBreakAlarmChosenMinutes = nil
         }
+        activityLimitsPauseExpiresAt = Self.loadFutureDate(forKey: Self.activityLimitsPauseExpiryKey)
+        if activityLimitsPauseExpiresAt != nil {
+            activityLimitsPauseChosenMinutes = UserDefaults.standard.object(
+                forKey: Self.activityLimitsPauseChosenMinutesKey
+            ) == nil ? nil : UserDefaults.standard.integer(forKey: Self.activityLimitsPauseChosenMinutesKey)
+        }
         refreshExpiredMuteIfNeeded(now: Date())
+        refreshExpiredPauseIfNeeded(now: Date())
     }
 
     /// Clears persisted mute once `now` has passed expiry; harmless to call often.
@@ -66,31 +78,93 @@ final class MacDashboardViewModel: ObservableObject {
         return until > Date()
     }
 
+    func refreshExpiredPauseIfNeeded(now: Date = Date()) {
+        guard let until = activityLimitsPauseExpiresAt, until <= now else { return }
+        activityLimitsPauseExpiresAt = nil
+        activityLimitsPauseChosenMinutes = nil
+        Self.clearPausePersistence()
+    }
+
+    func pauseActivityLimits(minutes: Int) {
+        let now = Date()
+        let candidate = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
+        refreshExpiredPauseIfNeeded(now: now)
+        if let existing = activityLimitsPauseExpiresAt {
+            activityLimitsPauseExpiresAt = max(existing, candidate)
+        } else {
+            activityLimitsPauseExpiresAt = candidate
+        }
+        activityLimitsPauseChosenMinutes = minutes
+        activityLimits.clearActiveBreaksForPause()
+        persistPause()
+    }
+
+    func clearActivityLimitsPause() {
+        activityLimitsPauseExpiresAt = nil
+        activityLimitsPauseChosenMinutes = nil
+        Self.clearPausePersistence()
+    }
+
+    func activityLimitsPausedNow(at now: Date = Date()) -> Bool {
+        refreshExpiredPauseIfNeeded(now: now)
+        return activityLimitsPauseExpiresAt.map { $0 > now } ?? false
+    }
+
     func start(store: HandTrackStore) {
         refreshExpiredMuteIfNeeded(now: Date())
+        refreshExpiredPauseIfNeeded(now: Date())
         activityLimits.attach(store: store)
         monitor.onKeystroke = { [weak self, weak store] in
             Task { @MainActor in
                 guard let self, let store else { return }
-                store.recordKeystroke()
-                guard !self.breakAlarmsMutedForPlaybackNow() else { return }
-                self.activityLimits.registerEvent(of: .keystrokes)
+                let now = Date()
+                store.recordKeystroke(at: now)
+                if self.activityLimitsPausedNow(at: now) {
+                    self.activityLimits.ignoreEventDuringPause(of: .keystrokes, at: now)
+                } else {
+                    self.activityLimits.registerEvent(
+                        of: .keystrokes,
+                        at: now,
+                        playSound: !self.breakAlarmsMutedForPlaybackNow()
+                    )
+                }
             }
         }
         monitor.onMouseClick = { [weak self, weak store] in
             Task { @MainActor in
                 guard let self, let store else { return }
-                store.recordMouseClick()
-                guard !self.breakAlarmsMutedForPlaybackNow() else { return }
-                self.activityLimits.registerEvent(of: .mouseClicks)
+                let now = Date()
+                store.recordMouseClick(at: now)
+                if self.activityLimitsPausedNow(at: now) {
+                    self.activityLimits.ignoreEventDuringPause(of: .mouseClicks, at: now)
+                } else {
+                    self.activityLimits.registerEvent(
+                        of: .mouseClicks,
+                        at: now,
+                        playSound: !self.breakAlarmsMutedForPlaybackNow()
+                    )
+                }
             }
         }
         monitor.onBufferedTravelPixels = { [weak self, weak store] batch in
             Task { @MainActor in
                 guard let self, let store else { return }
-                store.recordMouseTravelPixels(batch)
-                guard !self.breakAlarmsMutedForPlaybackNow() else { return }
-                self.activityLimits.registerEvent(of: .pointerTravel, eventMagnitude: batch)
+                let now = Date()
+                store.recordMouseTravelPixels(batch, at: now)
+                if self.activityLimitsPausedNow(at: now) {
+                    self.activityLimits.ignoreEventDuringPause(
+                        of: .pointerTravel,
+                        eventMagnitude: batch,
+                        at: now
+                    )
+                } else {
+                    self.activityLimits.registerEvent(
+                        of: .pointerTravel,
+                        eventMagnitude: batch,
+                        at: now,
+                        playSound: !self.breakAlarmsMutedForPlaybackNow()
+                    )
+                }
             }
         }
         monitor.start()
@@ -149,5 +223,29 @@ final class MacDashboardViewModel: ObservableObject {
     private static func clearMutedPersistence() {
         UserDefaults.standard.removeObject(forKey: recordingAlarmMuteExpiryKey)
         UserDefaults.standard.removeObject(forKey: recordingAlarmMuteChosenMinutesKey)
+    }
+
+    private func persistPause() {
+        guard let until = activityLimitsPauseExpiresAt else { return }
+        UserDefaults.standard.set(until.timeIntervalSince1970, forKey: Self.activityLimitsPauseExpiryKey)
+        if let minutes = activityLimitsPauseChosenMinutes {
+            UserDefaults.standard.set(minutes, forKey: Self.activityLimitsPauseChosenMinutesKey)
+        }
+    }
+
+    private static func loadFutureDate(forKey key: String) -> Date? {
+        let raw = UserDefaults.standard.double(forKey: key)
+        guard raw > 0 else { return nil }
+        let date = Date(timeIntervalSince1970: raw)
+        guard date > Date() else {
+            UserDefaults.standard.removeObject(forKey: key)
+            return nil
+        }
+        return date
+    }
+
+    private static func clearPausePersistence() {
+        UserDefaults.standard.removeObject(forKey: activityLimitsPauseExpiryKey)
+        UserDefaults.standard.removeObject(forKey: activityLimitsPauseChosenMinutesKey)
     }
 }

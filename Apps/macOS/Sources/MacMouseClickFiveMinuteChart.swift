@@ -12,16 +12,26 @@ private enum FiveMinuteMouseClickChart {
 struct MacMouseClickFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
 
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            MacMouseClickFiveMinuteChartRender(
+                store: store,
+                referenceDate: timeline.date,
+                refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date)
+            )
+            .equatable()
+        }
+    }
+}
+
+private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
+    let store: HandTrackStore
+    let referenceDate: Date
+    let refreshBucket: Int
+
     private let cap = FiveMinuteMouseClickChart.comfortableClickCap
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            chartContent(referenceDate: timeline.date)
-        }
-    }
-
-    @ViewBuilder
-    private func chartContent(referenceDate: Date) -> some View {
         let slots = store.mouseClicksByFiveMinuteSlotsTrailing(reference: referenceDate, count: 12)
         let boundaries = Array(0...slots.count)
 
@@ -42,6 +52,10 @@ struct MacMouseClickFiveMinuteChart: View {
         }
         .frame(height: 200)
         .padding(.top, 20)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.refreshBucket == rhs.refreshBucket
     }
 
     @ChartContentBuilder
