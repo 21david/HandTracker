@@ -8,10 +8,10 @@ import Foundation
 /// then one batched callback ~4×/s, so typical CPU impact is small compared to high tracking rate games.
 final class KeystrokeMonitor {
     private static let flushInterval: TimeInterval = 0.25
-    /// Duplicate companion CGEvent for the *same* notch is usually &lt;10ms.
-    /// Keep this short so a fast multi-notch flick (often ~15–40ms apart) still counts each notch.
-    private static let scrollDuplicateWindow: CFTimeInterval = 0.01
-    private static let scrollDuplicateWindowNs: CGEventTimestamp = 10_000_000
+    /// Drop the duplicate companion CGEvent for the same notch; keeps single-notch ≈ 1.
+    /// Fast multi-notch flicks may under-count — accepted tradeoff vs double-counting.
+    private static let scrollDuplicateWindow: CFTimeInterval = 0.05
+    private static let scrollDuplicateWindowNs: CGEventTimestamp = 50_000_000
     /// Trackpad / Magic Mouse: about this many scroll points ⇒ 1 bump.
     private static let trackpadPointsPerBump: Double = 14
 
@@ -33,8 +33,6 @@ final class KeystrokeMonitor {
     private var lastScrollBumpMediaTime: CFTimeInterval = 0
     private var lastScrollEventTimestamp: CGEventTimestamp = 0
     private var trackpadPointAccumulator: Double = 0
-    /// Learned |line| size for one physical notch (macOS often uses ~10, not 1).
-    private var discreteLineUnit: Int64 = 0
 
     var isMonitoring: Bool {
         eventTap != nil
@@ -185,38 +183,11 @@ final class KeystrokeMonitor {
             return 0
         }
 
-        // Discrete wheel: any non-zero line delta = notch activity (ignore pixel-only companions).
+        // Discrete wheel: any non-zero line delta = one notch (ignore pixel-only companions).
         guard hasLine else { return 0 }
         if phase.contains(.changed) { return 0 }
         if isDuplicateScrollEvent(event) { return 0 }
         markScrollEventAccepted(event)
-
-        let lineMag = max(abs(line1), abs(line2))
-        // Fast flicks sometimes coalesce several notches into one CGEvent with a larger line delta.
-        let notches = discreteNotchCount(forLineMagnitude: lineMag)
-        return notches
-    }
-
-    /// Map a line-delta magnitude to physical notches. Never use raw magnitude alone when the
-    /// unit is ~10 (that would turn one notch into ten). Prefer 1; if magnitude is a clear
-    /// multiple of the learned single-notch unit, count that many (coalesced fast scroll).
-    private func discreteNotchCount(forLineMagnitude lineMag: Int64) -> Int {
-        let mag = max(lineMag, 1)
-        if discreteLineUnit <= 0 {
-            discreteLineUnit = mag
-            return 1
-        }
-        if mag < discreteLineUnit {
-            discreteLineUnit = mag
-            return 1
-        }
-        // Only treat as coalesced multi-notch when the device uses multi-line notches (unit ≥ 2)
-        // and the delta is an approximate multiple of that unit.
-        if discreteLineUnit >= 2, mag >= discreteLineUnit * 2 {
-            let unit = discreteLineUnit
-            let rounded = Int((Double(mag) / Double(unit)).rounded())
-            return max(1, min(rounded, 20))
-        }
         return 1
     }
 
