@@ -155,6 +155,23 @@ enum MacFiveMinuteChartLeadingCaption {
             .rotationEffect(.degrees(180))
     }
 
+    /// Title plus a small device note, e.g. `Scrolls` / `(external mouse)`.
+    @ViewBuilder
+    static func rotated180Degrees(_ title: String, deviceNote: String) -> some View {
+        rotated180Degrees {
+            VStack(alignment: .center, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                Text("(\(deviceNote))")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+
     /// Same convention for multi‑line captions (12‑day chart bar/pain subtitles, etc.).
     @ViewBuilder
     static func rotated180Degrees<V: View>(@ViewBuilder content: () -> V) -> some View {

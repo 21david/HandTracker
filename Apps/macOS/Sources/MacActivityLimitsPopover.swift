@@ -1,46 +1,13 @@
 import SwiftUI
 
 /// Edits the Activity Limits feature: per-activity threshold + window + break + extension seconds.
-/// Persisted via `@AppStorage`; consumers refresh `MacActivityLimitController` on dismiss so timers
-/// pick up new values immediately.
+/// Edits are held in a local draft and only written to `UserDefaults` when the user taps Done,
+/// so partial text-field values cannot trip the live limit/timer mid-edit.
 struct MacActivityLimitsPopover: View {
     @Environment(\.dismiss) private var dismiss
 
-    @AppStorage(HandTrackActivityLimitsStorage.masterEnabledKey)
-    private var masterEnabled = HandTrackActivityLimitsStorage.Defaults.masterEnabled
-
-    @AppStorage(HandTrackActivityLimitsStorage.keysEnabledKey)
-    private var keysEnabled = HandTrackActivityLimitsStorage.Defaults.keysEnabled
-    @AppStorage(HandTrackActivityLimitsStorage.keysThresholdKey)
-    private var keysThreshold = HandTrackActivityLimitsStorage.Defaults.keysThreshold
-    @AppStorage(HandTrackActivityLimitsStorage.keysWindowMinutesKey)
-    private var keysWindow = HandTrackActivityLimitsStorage.Defaults.keysWindowMinutes
-    @AppStorage(HandTrackActivityLimitsStorage.keysBreakMinutesKey)
-    private var keysBreak = HandTrackActivityLimitsStorage.Defaults.keysBreakMinutes
-    @AppStorage(HandTrackActivityLimitsStorage.keysExtensionSecondsKey)
-    private var keysExtension = HandTrackActivityLimitsStorage.Defaults.keysExtensionSeconds
-
-    @AppStorage(HandTrackActivityLimitsStorage.clicksEnabledKey)
-    private var clicksEnabled = HandTrackActivityLimitsStorage.Defaults.clicksEnabled
-    @AppStorage(HandTrackActivityLimitsStorage.clicksThresholdKey)
-    private var clicksThreshold = HandTrackActivityLimitsStorage.Defaults.clicksThreshold
-    @AppStorage(HandTrackActivityLimitsStorage.clicksWindowMinutesKey)
-    private var clicksWindow = HandTrackActivityLimitsStorage.Defaults.clicksWindowMinutes
-    @AppStorage(HandTrackActivityLimitsStorage.clicksBreakMinutesKey)
-    private var clicksBreak = HandTrackActivityLimitsStorage.Defaults.clicksBreakMinutes
-    @AppStorage(HandTrackActivityLimitsStorage.clicksExtensionSecondsKey)
-    private var clicksExtension = HandTrackActivityLimitsStorage.Defaults.clicksExtensionSeconds
-
-    @AppStorage(HandTrackActivityLimitsStorage.travelEnabledKey)
-    private var travelEnabled = HandTrackActivityLimitsStorage.Defaults.travelEnabled
-    @AppStorage(HandTrackActivityLimitsStorage.travelThresholdKey)
-    private var travelThreshold = HandTrackActivityLimitsStorage.Defaults.travelThreshold
-    @AppStorage(HandTrackActivityLimitsStorage.travelWindowMinutesKey)
-    private var travelWindow = HandTrackActivityLimitsStorage.Defaults.travelWindowMinutes
-    @AppStorage(HandTrackActivityLimitsStorage.travelBreakMinutesKey)
-    private var travelBreak = HandTrackActivityLimitsStorage.Defaults.travelBreakMinutes
-    @AppStorage(HandTrackActivityLimitsStorage.travelExtensionSecondsKey)
-    private var travelExtension = HandTrackActivityLimitsStorage.Defaults.travelExtensionSeconds
+    /// Working copy loaded on appear; discarded if the popover closes without Done.
+    @State private var draft = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
 
     let onChange: () -> Void
 
@@ -48,14 +15,14 @@ struct MacActivityLimitsPopover: View {
     /// stays a manageable 3-digit number (e.g. 500 means 500,000 px).
     private var travelThresholdKThousands: Binding<Int> {
         Binding(
-            get: { max(1, travelThreshold / 1000) },
-            set: { travelThreshold = max(1, $0) * 1000 }
+            get: { max(1, Int(draft.travel.threshold.rounded()) / 1000) },
+            set: { draft.travel.threshold = Double(max(1, $0) * 1000) }
         )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Toggle("Enable activity limits", isOn: $masterEnabled)
+            Toggle("Enable activity limits", isOn: $draft.masterEnabled)
                 .toggleStyle(.switch)
                 .font(.headline)
 
@@ -70,45 +37,44 @@ struct MacActivityLimitsPopover: View {
 
             activitySection(
                 title: "Keystrokes",
-                enabled: $keysEnabled,
-                threshold: $keysThreshold,
+                enabled: $draft.keys.enabled,
+                threshold: intThresholdBinding(\.keys),
                 thresholdRange: 1...100_000,
                 thresholdStep: 50,
                 thresholdUnit: "keys",
-                window: $keysWindow,
-                breakMinutes: $keysBreak,
-                extensionSeconds: $keysExtension
+                window: intBinding(\.keys, \.windowMinutes),
+                breakMinutes: intBinding(\.keys, \.breakMinutes),
+                extensionSeconds: intBinding(\.keys, \.extensionSeconds)
             )
 
             activitySection(
                 title: "Mouse clicks",
-                enabled: $clicksEnabled,
-                threshold: $clicksThreshold,
+                enabled: $draft.clicks.enabled,
+                threshold: intThresholdBinding(\.clicks),
                 thresholdRange: 1...50_000,
                 thresholdStep: 10,
                 thresholdUnit: "clicks",
-                window: $clicksWindow,
-                breakMinutes: $clicksBreak,
-                extensionSeconds: $clicksExtension
+                window: intBinding(\.clicks, \.windowMinutes),
+                breakMinutes: intBinding(\.clicks, \.breakMinutes),
+                extensionSeconds: intBinding(\.clicks, \.extensionSeconds)
             )
 
             activitySection(
                 title: "Pointer travel",
-                enabled: $travelEnabled,
+                enabled: $draft.travel.enabled,
                 threshold: travelThresholdKThousands,
                 thresholdRange: 1...100_000,
                 thresholdStep: 10,
                 thresholdUnit: "thousand px",
-                window: $travelWindow,
-                breakMinutes: $travelBreak,
-                extensionSeconds: $travelExtension
+                window: intBinding(\.travel, \.windowMinutes),
+                breakMinutes: intBinding(\.travel, \.breakMinutes),
+                extensionSeconds: intBinding(\.travel, \.extensionSeconds)
             )
 
             HStack {
                 Spacer(minLength: 0)
                 Button("Done") {
-                    onChange()
-                    dismiss()
+                    commitAndDismiss()
                 }
                 .keyboardShortcut(.defaultAction)
             }
@@ -116,7 +82,53 @@ struct MacActivityLimitsPopover: View {
         .padding(20)
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: 520)
-        .onDisappear { onChange() }
+        .onAppear {
+            draft = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
+        }
+    }
+
+    private func commitAndDismiss() {
+        draft.saveToUserDefaults()
+        // #region agent log
+        MacAgentDebugLog.log(
+            hypothesisId: "G",
+            location: "MacActivityLimitsPopover.swift:commitAndDismiss",
+            message: "activity limits committed on Done",
+            data: [
+                "keysThreshold": Int(draft.keys.threshold.rounded()),
+                "masterEnabled": draft.masterEnabled,
+            ]
+        )
+        // #endregion
+        onChange()
+        dismiss()
+    }
+
+    private func intThresholdBinding(
+        _ activity: WritableKeyPath<HandTrackActivityLimitsSnapshot, HandTrackActivityLimitsSnapshot.PerActivity>
+    ) -> Binding<Int> {
+        Binding(
+            get: { Int(draft[keyPath: activity].threshold.rounded()) },
+            set: { newValue in
+                var copy = draft[keyPath: activity]
+                copy.threshold = Double(newValue)
+                draft[keyPath: activity] = copy
+            }
+        )
+    }
+
+    private func intBinding(
+        _ activity: WritableKeyPath<HandTrackActivityLimitsSnapshot, HandTrackActivityLimitsSnapshot.PerActivity>,
+        _ field: WritableKeyPath<HandTrackActivityLimitsSnapshot.PerActivity, Int>
+    ) -> Binding<Int> {
+        Binding(
+            get: { draft[keyPath: activity][keyPath: field] },
+            set: { newValue in
+                var copy = draft[keyPath: activity]
+                copy[keyPath: field] = newValue
+                draft[keyPath: activity] = copy
+            }
+        )
     }
 
     @ViewBuilder
@@ -131,7 +143,7 @@ struct MacActivityLimitsPopover: View {
         breakMinutes: Binding<Int>,
         extensionSeconds: Binding<Int>
     ) -> some View {
-        let sectionDisabled = !enabled.wrappedValue || !masterEnabled
+        let sectionDisabled = !enabled.wrappedValue || !draft.masterEnabled
 
         VStack(alignment: .leading, spacing: 10) {
             Toggle(title, isOn: enabled)

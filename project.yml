@@ -33,6 +33,8 @@ targets:
     sources:
       - Apps/macOS/Sources
       - Apps/macOS/Resources/Assets.xcassets
+      - path: Apps/macOS/Resources/plot_metric_histogram.py
+        buildPhase: resources
       - Packages/HandTrackCore/Sources
       - Packages/HandTrackPersistence/Sources
       - Packages/HandTrackSync/Sources

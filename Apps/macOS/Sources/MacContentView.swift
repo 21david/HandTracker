@@ -2,13 +2,35 @@ import SwiftUI
 
 struct MacContentView: View {
     @EnvironmentObject private var store: HandTrackStore
+    @Environment(HandTrackLivePulse.self) private var livePulse
     @StateObject private var viewModel = MacDashboardViewModel()
     @State private var showSyncInfo = false
     @State private var showIosLogsSheet = false
     @State private var showActivityLimits = false
     @State private var showingMoreCharts = false
+    @State private var showingHistoricalPlots = false
+    /// Hand-tracking day start when drilling into 24 hourly bars from the 12-day chart.
+    @State private var hourlyDayDetailStart: Date?
     @State private var expandedSyncedLogJournalIDs: Set<UUID> = []
     @AppStorage("HandTrack.mac.alarmControlMode") private var alarmControlModeRaw = MacAlarmControlMode.mute.rawValue
+    @AppStorage(MacLiveGraphDeviceSource.storageKey)
+    private var liveGraphDeviceSourceRaw = MacLiveGraphDeviceSource.external.rawValue
+    @AppStorage(MacLiveUsageBucketResolution.storageKey)
+    private var liveBucketResolutionRaw = MacLiveUsageBucketResolution.fiveMinutes.rawValue
+
+    private var liveGraphDeviceSource: Binding<MacLiveGraphDeviceSource> {
+        Binding(
+            get: { MacLiveGraphDeviceSource(rawValue: liveGraphDeviceSourceRaw) ?? .external },
+            set: { liveGraphDeviceSourceRaw = $0.rawValue }
+        )
+    }
+
+    private var liveBucketResolution: Binding<MacLiveUsageBucketResolution> {
+        Binding(
+            get: { MacLiveUsageBucketResolution(rawValue: liveBucketResolutionRaw) ?? .fiveMinutes },
+            set: { liveBucketResolutionRaw = $0.rawValue }
+        )
+    }
 
     private static let muteTimeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -18,8 +40,19 @@ struct MacContentView: View {
     }()
 
     var body: some View {
+        // #region agent log
+        let _ = MacAgentDebugLog.noteContentBodyEval()
+        // #endregion
         Group {
-            if showingMoreCharts {
+            if let hourlyDayDetailStart {
+                MacDayHourlyUsageDetailView(dayStart: hourlyDayDetailStart) {
+                    self.hourlyDayDetailStart = nil
+                }
+            } else if showingHistoricalPlots {
+                MacHistoricalPlotsView {
+                    showingHistoricalPlots = false
+                }
+            } else if showingMoreCharts {
                 moreChartsView
             } else {
                 mainDashboardView
@@ -33,6 +66,12 @@ struct MacContentView: View {
         }
         .onDisappear {
             viewModel.stop()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .handTrackOpenHourlyDayDetail)) { note in
+            guard let dayStart = note.userInfo?["dayStart"] as? Date else { return }
+            showingHistoricalPlots = false
+            showingMoreCharts = false
+            hourlyDayDetailStart = dayStart
         }
         .sheet(isPresented: $showIosLogsSheet) {
             iosLogsSheet
@@ -48,20 +87,26 @@ struct MacContentView: View {
 
                 MacActivityBreakBanner(controller: viewModel.activityLimits)
 
-                let summaryPulse =
-                    MacChartEquatableBucket.keystrokeRevision(store)
-                    &+ MacChartEquatableBucket.mouseClickRevision(store)
-                    &+ MacChartEquatableBucket.mouseTravelRevision(store)
-                    &+ MacChartEquatableBucket.scrollBumpRevision(store)
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    MacUsageDashboardSummary(now: ctx.date)
-                        .id(summaryPulse)
+                MacUsageDashboardSummary(now: Date())
+
+                HStack(alignment: .center, spacing: 12) {
+                    MacLiveGraphDeviceSourcePicker(source: liveGraphDeviceSource)
+                    Spacer(minLength: 8)
+                    MacLiveUsageBucketResolutionPicker(resolution: liveBucketResolution)
                 }
 
-                MacKeystrokeFiveMinuteChart()
-                MacMouseClickFiveMinuteChart()
-                MacMouseTravelFiveMinuteChart()
-                MacScrollBumpFiveMinuteChart()
+                if liveGraphDeviceSource.wrappedValue == .external {
+                    MacKeystrokeFiveMinuteChart()
+                    MacMouseClickFiveMinuteChart()
+                    MacMouseTravelFiveMinuteChart()
+                    MacScrollBumpFiveMinuteChart()
+                } else {
+                    MacBuiltinKeyboardFiveMinuteChart()
+                    MacBuiltinTrackpadClickFiveMinuteChart()
+                    MacBuiltinTrackpadTravelFiveMinuteChart()
+                    MacBuiltinTrackpadScrollFiveMinuteChart()
+                }
+
                 MacTwelveHourStackedUsagePainChart()
                 MacTwelveDayStackedUsagePainChart()
             }
@@ -125,6 +170,17 @@ struct MacContentView: View {
 
                 muteControls(now: timeline.date)
 
+                // for debugging/testing - deletable (opens MacGraphsDebugModePanel)
+                Button {
+                    MacGraphsDebugModePresenter.shared.show(livePulse: livePulse)
+                } label: {
+                    Text("Graphs Debug")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .tracking(0.15)
+                }
+                .buttonStyle(GrayAccessoryPillButtonStyle())
+                .help("Debug overlay: live flash tiles for each graph input (deletable)")
+
                 Button {
                     showIosLogsSheet = true
                 } label: {
@@ -160,6 +216,16 @@ struct MacContentView: View {
                         viewModel.activityLimits.refreshAfterSettingsChange()
                     }
                 }
+
+                Button {
+                    showingHistoricalPlots = true
+                } label: {
+                    Text("Plots")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .tracking(0.15)
+                }
+                .buttonStyle(GrayAccessoryPillButtonStyle())
+                .help("All-time Instagram-style histograms (pandas + seaborn)")
 
                 Button {
                     showingMoreCharts = true

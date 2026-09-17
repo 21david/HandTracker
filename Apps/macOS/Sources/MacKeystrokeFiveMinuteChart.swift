@@ -9,6 +9,7 @@ private enum LiveKeystrokeChart {
 
 struct MacKeystrokeFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
+    @Environment(HandTrackLivePulse.self) private var livePulse
     @AppStorage(MacLiveUsageBucketResolution.storageKey)
     private var resolutionRaw = MacLiveUsageBucketResolution.fiveMinutes.rawValue
 
@@ -20,23 +21,17 @@ struct MacKeystrokeFiveMinuteChart: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Spacer(minLength: 0)
-                MacLiveUsageBucketResolutionPicker(resolution: resolution)
-            }
-            let liveRevision = MacChartEquatableBucket.keystrokeRevision(store)
-            TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                MacKeystrokeFiveMinuteChartRender(
-                    store: store,
-                    referenceDate: timeline.date,
-                    refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date),
-                    liveRevision: liveRevision,
-                    resolution: resolution.wrappedValue
-                )
-                .equatable()
-                .id(liveRevision)
-            }
+        let _ = livePulse.keystrokes
+        let liveRevision = MacChartEquatableBucket.keystrokeRevision(store)
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            MacKeystrokeFiveMinuteChartRender(
+                store: store,
+                referenceDate: timeline.date,
+                refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date),
+                liveRevision: liveRevision,
+                resolution: resolution.wrappedValue
+            )
+            .equatable()
         }
     }
 }
@@ -52,12 +47,28 @@ private struct MacKeystrokeFiveMinuteChartRender: View, Equatable {
     private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveKeystrokeChart.fiveMinuteExcess) }
 
     var body: some View {
+        // #region agent log
+        let bodyStarted = CFAbsoluteTimeGetCurrent()
+        // #endregion
         let slots = store.keystrokesByFiveMinuteSlotsTrailing(
             reference: referenceDate,
             count: resolution.barCount,
             minutesPerSlot: resolution.minutesPerBar
         )
         let boundaries = Array(0...slots.count)
+        // #region agent log
+        let prepMs = Int((CFAbsoluteTimeGetCurrent() - bodyStarted) * 1000)
+        let _ = {
+            if prepMs >= 5 {
+                MacAgentDebugLog.log(
+                    hypothesisId: "P4",
+                    location: "MacKeystrokeFiveMinuteChartRender.body",
+                    message: "chart_prep_cost",
+                    data: ["runId": "perf-scroll", "ms": prepMs, "bars": slots.count]
+                )
+            }
+        }()
+        // #endregion
 
         Chart {
             baselineMark()
@@ -72,7 +83,7 @@ private struct MacKeystrokeFiveMinuteChartRender: View, Equatable {
             MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral()
         }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Keystrokes")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Keystrokes", deviceNote: "external keyboard")
         }
         .frame(height: 200)
         .padding(.top, 20)

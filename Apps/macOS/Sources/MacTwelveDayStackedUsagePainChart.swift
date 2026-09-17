@@ -47,6 +47,9 @@ private enum TwelveDayCombinedChart {
     static let clicksDayExcess = 17.0 * scaleFactor * usageCapEaseVersusDisplayedHours
     static let travelDayCap = 125_000.0 * scaleFactor * usageCapEaseVersusDisplayedHours
     static let travelDayExcess = 37_500.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    /// Matches live scroll five‑minute cap × same day scale factor as other modalities.
+    static let scrollsDayCap = 200.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let scrollsDayExcess = 40.0 * scaleFactor * usageCapEaseVersusDisplayedHours
 
     static let usageBandThird = 10.0 / 3.0
 
@@ -69,12 +72,14 @@ private enum StackDayMetric: Hashable {
     case keystrokes(Int)
     case mouseClicks(Int)
     case travel(Double)
+    case scrollBumps(Int)
 
     var gradientKind: MacFiveMinuteBarStyle.StackedHourInputKind {
         switch self {
         case .keystrokes: return .keystrokes
         case .mouseClicks: return .mouseClicks
         case .travel: return .pixelTravel
+        case .scrollBumps: return .scrollBumps
         }
     }
 
@@ -87,6 +92,8 @@ private enum StackDayMetric: Hashable {
             return "\(Self.siInteger(n)) clicks"
         case .travel(let px):
             return "\(Self.siTravelPixels(px)) px traveled"
+        case .scrollBumps(let n):
+            return "\(Self.siInteger(n)) scrolls"
         }
     }
 
@@ -102,6 +109,8 @@ private enum StackDayMetric: Hashable {
             return "\(bucket): \(Self.siInteger(n)) clicks"
         case .travel(let px):
             return "\(bucket): \(Self.siTravelPixels(px)) px traveled"
+        case .scrollBumps(let n):
+            return "\(bucket): \(Self.siInteger(n)) scrolls"
         }
     }
 
@@ -148,6 +157,7 @@ private struct DayStackLayer: Identifiable {
         case .keystrokes: return "k"
         case .mouseClicks: return "c"
         case .travel: return "t"
+        case .scrollBumps: return "s"
         }
     }
 }
@@ -156,11 +166,13 @@ private struct TwelveDayUsageModalityVisibility: Equatable {
     var showKeystrokes: Bool
     var showMouseClicks: Bool
     var showTravel: Bool
+    var showScrolls: Bool
 
     static let allVisible = TwelveDayUsageModalityVisibility(
         showKeystrokes: true,
         showMouseClicks: true,
-        showTravel: true
+        showTravel: true,
+        showScrolls: true
     )
 }
 
@@ -372,56 +384,88 @@ private struct BuiltDayMetricStage {
 
 private func buildDayStackLayers(
     slots: [ComputerUsageDaySlot],
-    usageVisibility: TwelveDayUsageModalityVisibility
+    usageVisibility: TwelveDayUsageModalityVisibility,
+    rates: MacEstimatedWorkloadMinutes.Rates = .fromUserDefaults()
 ) -> [DayStackLayer] {
     /// Fixed **10 ÷ 3** band per modality (same height meaning as toggling overlays off in the twelve‑hour chart).
     let bandSlice = TwelveDayCombinedChart.usageBandThird
     let maxComposite = 10.0
-    guard usageVisibility.showKeystrokes || usageVisibility.showMouseClicks || usageVisibility.showTravel else {
+    guard usageVisibility.showKeystrokes || usageVisibility.showMouseClicks || usageVisibility.showTravel || usageVisibility.showScrolls else {
         return []
     }
 
     var rows: [DayStackLayer] = []
 
     for (i, slot) in slots.enumerated() {
-        let keysFrac = dayCappedFraction(Double(slot.keystrokeCount), cap: TwelveDayCombinedChart.keystrokesDayCap)
-        let clickFrac = dayCappedFraction(Double(slot.mouseClickCount), cap: TwelveDayCombinedChart.clicksDayCap)
-        let travelFrac = dayCappedFraction(slot.travelPixels, cap: TwelveDayCombinedChart.travelDayCap)
+        let keysTotal = slot.keystrokeCount + slot.builtinKeystrokeCount
+        let clicksTotal = slot.mouseClickCount + slot.builtinTrackpadClickCount
+        let travelTotal =
+            slot.travelPixels
+            + MacEstimatedWorkloadMinutes.equivalentTravelPixels(
+                fromTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+                rates: rates
+            )
+        let scrollsTotal = Int(
+            (
+                Double(slot.scrollBumpCount)
+                    + MacEstimatedWorkloadMinutes.equivalentScrollBumps(
+                        fromTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
+                        rates: rates
+                    )
+            ).rounded(.toNearestOrAwayFromZero)
+        )
+
+        let keysFrac = dayCappedFraction(Double(keysTotal), cap: TwelveDayCombinedChart.keystrokesDayCap)
+        let clickFrac = dayCappedFraction(Double(clicksTotal), cap: TwelveDayCombinedChart.clicksDayCap)
+        let travelFrac = dayCappedFraction(travelTotal, cap: TwelveDayCombinedChart.travelDayCap)
+        let scrollFrac = dayCappedFraction(Double(scrollsTotal), cap: TwelveDayCombinedChart.scrollsDayCap)
 
         let sKeys = MacFiveMinuteBarStyle.stressAmount(
-            from: Double(slot.keystrokeCount),
+            from: Double(keysTotal),
             cap: TwelveDayCombinedChart.keystrokesDayCap,
             excessWidth: TwelveDayCombinedChart.keystrokesDayExcess
         )
         let sClicks = MacFiveMinuteBarStyle.stressAmount(
-            from: Double(slot.mouseClickCount),
+            from: Double(clicksTotal),
             cap: TwelveDayCombinedChart.clicksDayCap,
             excessWidth: TwelveDayCombinedChart.clicksDayExcess
         )
         let sTravel = MacFiveMinuteBarStyle.stressAmount(
-            from: slot.travelPixels,
+            from: travelTotal,
             cap: TwelveDayCombinedChart.travelDayCap,
             excessWidth: TwelveDayCombinedChart.travelDayExcess
         )
+        let sScrolls = MacFiveMinuteBarStyle.stressAmount(
+            from: Double(scrollsTotal),
+            cap: TwelveDayCombinedChart.scrollsDayCap,
+            excessWidth: TwelveDayCombinedChart.scrollsDayExcess
+        )
 
-        // Stack bottom → top: pointer travel → clicks → keys (same order as twelve‑hour chart).
+        // Stack bottom → top: pointer travel → scrolls → clicks → keys.
+        // Keep 10÷3 band size so columns with no scrolls match prior heights.
         var stages: [BuiltDayMetricStage] = []
         if usageVisibility.showTravel {
             let h = travelFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sTravel, metric: .travel(slot.travelPixels)))
+                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sTravel, metric: .travel(travelTotal)))
+            }
+        }
+        if usageVisibility.showScrolls {
+            let h = scrollFrac * bandSlice
+            if h > 0.000_1 {
+                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sScrolls, metric: .scrollBumps(scrollsTotal)))
             }
         }
         if usageVisibility.showMouseClicks {
             let h = clickFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sClicks, metric: .mouseClicks(slot.mouseClickCount)))
+                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sClicks, metric: .mouseClicks(clicksTotal)))
             }
         }
         if usageVisibility.showKeystrokes {
             let h = keysFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sKeys, metric: .keystrokes(slot.keystrokeCount)))
+                stages.append(BuiltDayMetricStage(unscaledHeight: h, stress: sKeys, metric: .keystrokes(keysTotal)))
             }
         }
 
@@ -464,7 +508,7 @@ private struct TwelveDayPainPrepared {
             precondition(painsByCurve[curve]?.count == slots.count, "pain array length must match day slots")
         }
         self.slots = slots
-        stackLayers = buildDayStackLayers(slots: slots, usageVisibility: usageVisibility)
+        stackLayers = buildDayStackLayers(slots: slots, usageVisibility: usageVisibility, rates: .fromUserDefaults())
 
         var byCurve: [TwelveDayPainCurve: [DayPainSample]] = [:]
         for curve in TwelveDayPainCurve.allCases {
@@ -629,6 +673,10 @@ private func twelveDayEstimatedTimeLabel(slot: ComputerUsageDaySlot, rates: MacE
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
         scrollBumps: slot.scrollBumpCount,
+        builtinKeystrokes: slot.builtinKeystrokeCount,
+        builtinTrackpadClicks: slot.builtinTrackpadClickCount,
+        builtinTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+        builtinTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
         rates: rates
     )
     return MacEstimatedWorkloadMinutes.compactDurationLabel(totalMinutes: total)
@@ -638,12 +686,16 @@ private func twelveDayEstimatedTimeLabel(slot: ComputerUsageDaySlot, rates: MacE
 private func twelveDayColumnUsageMinutes(
     slot: ComputerUsageDaySlot,
     rates: MacEstimatedWorkloadMinutes.Rates
-) -> (keyboard: Int, mouse: Int) {
+) -> (keyboard: Int, mouse: Int, macbookKeyboard: Int, macbookTrackpad: Int) {
     MacEstimatedWorkloadMinutes.columnBreakdown(
         keystrokes: slot.keystrokeCount,
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
         scrollBumps: slot.scrollBumpCount,
+        builtinKeystrokes: slot.builtinKeystrokeCount,
+        builtinTrackpadClicks: slot.builtinTrackpadClickCount,
+        builtinTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+        builtinTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
         rates: rates
     )
 }
@@ -676,7 +728,10 @@ private struct TwelveDayColumnContextMenuOverlay: View {
                         height: max(8, abs(yTop.y - yBottom.y))
                     ),
                     keyboardMinutes: minutes.keyboard,
-                    mouseMinutes: minutes.mouse
+                    mouseMinutes: minutes.mouse,
+                    macbookKeyboardMinutes: minutes.macbookKeyboard,
+                    macbookTrackpadMinutes: minutes.macbookTrackpad,
+                    handTrackingDayStart: slot.dayStart
                 )
             }
             MacUsageBreakdownRightClickLayer(regions: regions)
@@ -1099,6 +1154,7 @@ private enum TwelveDayUsageBarsAppStorage {
     static let showKeysKey = "HandTrack.mac.twelveDayChartShowKeys"
     static let showClicksKey = "HandTrack.mac.twelveDayChartShowClicks"
     static let showTravelKey = "HandTrack.mac.twelveDayChartShowPointerTravel"
+    static let showScrollsKey = "HandTrack.mac.twelveDayChartShowScrolls"
 
     static let worstLeftKey = "HandTrack.mac.twelveDayPainWorstLeft"
     static let averageLeftKey = "HandTrack.mac.twelveDayPainAverageLeft"
@@ -1112,13 +1168,14 @@ private struct TwelveDayUsageBarsToggleStrip: View {
     @Binding var showKeys: Bool
     @Binding var showClicks: Bool
     @Binding var showTravel: Bool
+    @Binding var showScrolls: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Usage bars")
                 .font(.caption.weight(.semibold))
 
-            // Top → bottom matches bar stack: keys (top of column) → clicks → pointer (base).
+            // Top → bottom matches bar stack: keys → clicks → scrolls → pointer (base).
             VStack(alignment: .leading, spacing: 4) {
                 Toggle("Keys", isOn: $showKeys)
                     .toggleStyle(.checkbox)
@@ -1127,7 +1184,11 @@ private struct TwelveDayUsageBarsToggleStrip: View {
                 Toggle("Clicks", isOn: $showClicks)
                     .toggleStyle(.checkbox)
                     .font(.caption2)
-                    .help("Mouse clicks segment (middle of each column)")
+                    .help("Mouse clicks segment")
+                Toggle("Scrolls", isOn: $showScrolls)
+                    .toggleStyle(.checkbox)
+                    .font(.caption2)
+                    .help("Mouse-wheel scroll bumps")
                 Toggle("Pointer", isOn: $showTravel)
                     .toggleStyle(.checkbox)
                     .font(.caption2)
@@ -1156,10 +1217,18 @@ struct MacTwelveDayStackedUsagePainChart: View {
     @AppStorage(MacEstimatedWorkloadMinutes.keysPerMinuteKey) private var avgKeysPerMinute = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
     @AppStorage(MacEstimatedWorkloadMinutes.clicksPerMinuteKey) private var avgClicksPerMinute = MacEstimatedWorkloadMinutes.defaultClicksPerMinute
     @AppStorage(MacEstimatedWorkloadMinutes.pixelThousandsPerMinuteKey) private var avgPixelThousandsPerMinute = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.scrollsPerMinuteKey) private var avgScrollsPerMinute = MacEstimatedWorkloadMinutes.defaultScrollsPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.trackpadTravelPixelThousandsPerMinuteKey)
+    private var avgTrackpadTravelPixelThousandsPerMinute =
+        MacEstimatedWorkloadMinutes.defaultTrackpadTravelPixelThousandsPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.trackpadScrollPixelThousandsPerMinuteKey)
+    private var avgTrackpadScrollPixelThousandsPerMinute =
+        MacEstimatedWorkloadMinutes.defaultTrackpadScrollPixelThousandsPerMinute
 
     @AppStorage(TwelveDayUsageBarsAppStorage.showKeysKey) private var twelveDayChartShowKeys = true
     @AppStorage(TwelveDayUsageBarsAppStorage.showClicksKey) private var twelveDayChartShowClicks = true
     @AppStorage(TwelveDayUsageBarsAppStorage.showTravelKey) private var twelveDayChartShowTravel = true
+    @AppStorage(TwelveDayUsageBarsAppStorage.showScrollsKey) private var twelveDayChartShowScrolls = true
 
     @AppStorage(TwelveDayUsageBarsAppStorage.worstLeftKey) private var painWorstLeft = true
     @AppStorage(TwelveDayUsageBarsAppStorage.averageLeftKey) private var painAverageLeft = true
@@ -1202,7 +1271,8 @@ struct MacTwelveDayStackedUsagePainChart: View {
                 usageVisibility: TwelveDayUsageModalityVisibility(
                     showKeystrokes: twelveDayChartShowKeys,
                     showMouseClicks: twelveDayChartShowClicks,
-                    showTravel: twelveDayChartShowTravel
+                    showTravel: twelveDayChartShowTravel,
+                    showScrolls: twelveDayChartShowScrolls
                 ),
                 painVisibility: TwelveDayPainVisibility(
                     worstLeft: painWorstLeft,
@@ -1218,6 +1288,7 @@ struct MacTwelveDayStackedUsagePainChart: View {
                 showKeys: $twelveDayChartShowKeys,
                 showClicks: $twelveDayChartShowClicks,
                 showTravel: $twelveDayChartShowTravel,
+                showScrolls: $twelveDayChartShowScrolls,
                 painVisibilityBinding: painVisibilityBinding
             )
             .equatable()
@@ -1225,6 +1296,7 @@ struct MacTwelveDayStackedUsagePainChart: View {
             .onChange(of: twelveDayChartShowKeys) { _, _ in ensureUsageBarsInvariant() }
             .onChange(of: twelveDayChartShowClicks) { _, _ in ensureUsageBarsInvariant() }
             .onChange(of: twelveDayChartShowTravel) { _, _ in ensureUsageBarsInvariant() }
+            .onChange(of: twelveDayChartShowScrolls) { _, _ in ensureUsageBarsInvariant() }
         }
     }
 
@@ -1233,11 +1305,14 @@ struct MacTwelveDayStackedUsagePainChart: View {
         hasher.combine(avgKeysPerMinute)
         hasher.combine(avgClicksPerMinute)
         hasher.combine(avgPixelThousandsPerMinute)
+        hasher.combine(avgScrollsPerMinute)
+        hasher.combine(avgTrackpadTravelPixelThousandsPerMinute)
+        hasher.combine(avgTrackpadScrollPixelThousandsPerMinute)
         return hasher.finalize()
     }
 
     private func ensureUsageBarsInvariant() {
-        if !twelveDayChartShowKeys && !twelveDayChartShowClicks && !twelveDayChartShowTravel {
+        if !twelveDayChartShowKeys && !twelveDayChartShowClicks && !twelveDayChartShowTravel && !twelveDayChartShowScrolls {
             twelveDayChartShowKeys = true
         }
     }
@@ -1257,6 +1332,7 @@ private struct MacTwelveDayStackedUsagePainChartFrame: View, Equatable {
     @Binding var showKeys: Bool
     @Binding var showClicks: Bool
     @Binding var showTravel: Bool
+    @Binding var showScrolls: Bool
     var painVisibilityBinding: Binding<TwelveDayPainVisibility>
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -1278,7 +1354,8 @@ private struct MacTwelveDayStackedUsagePainChartFrame: View, Equatable {
                     TwelveDayUsageBarsToggleStrip(
                         showKeys: $showKeys,
                         showClicks: $showClicks,
-                        showTravel: $showTravel
+                        showTravel: $showTravel,
+                        showScrolls: $showScrolls
                     )
 
                     TwelveDayPainGraphsToggleMatrix(visibility: painVisibilityBinding)
@@ -1289,11 +1366,7 @@ private struct MacTwelveDayStackedUsagePainChartFrame: View, Equatable {
             TwelveDayPainChartPanel(
                 prepared: prepared,
                 painVisibility: painVisibility,
-                workloadRates: MacEstimatedWorkloadMinutes.Rates.from(
-                    keysPerMinute: avgKeysPerMinute,
-                    clicksPerMinute: avgClicksPerMinute,
-                    pixelThousandsPerMinute: avgPixelThousandsPerMinute
-                )
+                workloadRates: .fromUserDefaults()
             )
         }
     }

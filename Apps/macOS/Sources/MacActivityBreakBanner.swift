@@ -6,12 +6,14 @@ struct MacActivityBreakBanner: View {
     @ObservedObject var controller: MacActivityLimitController
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { context in
-            let now = context.date
-            let sorted = controller.activeBreaks.values.sorted { $0.kind.rawValue < $1.kind.rawValue }
-            if sorted.isEmpty {
-                EmptyView()
-            } else {
+        if controller.activeBreaks.isEmpty {
+            EmptyView()
+        } else {
+            // Only tick while a break is visible — avoid a half-second TimelineView when idle.
+            // Re-read activeBreaks each tick so timer extensions apply without a store-wide publish.
+            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                let now = context.date
+                let sorted = controller.activeBreaks.values.sorted { $0.kind.rawValue < $1.kind.rawValue }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Break in progress — each new event extends the timer")
                         .font(.caption.weight(.semibold))

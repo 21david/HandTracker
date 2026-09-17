@@ -47,6 +47,9 @@ private enum TwelveMonthCombinedChart {
     static let clicksMonthExcess = 17.0 * scaleFactor * usageCapEaseVersusDisplayedHours
     static let travelMonthCap = 125_000.0 * scaleFactor * usageCapEaseVersusDisplayedHours
     static let travelMonthExcess = 37_500.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    /// Matches live scroll five‑minute cap × same month scale factor as other modalities.
+    static let scrollsMonthCap = 200.0 * scaleFactor * usageCapEaseVersusDisplayedHours
+    static let scrollsMonthExcess = 40.0 * scaleFactor * usageCapEaseVersusDisplayedHours
 
     static let usageBandThird = 10.0 / 3.0
 
@@ -90,12 +93,14 @@ private enum StackMonthMetric: Hashable {
     case keystrokes(Int)
     case mouseClicks(Int)
     case travel(Double)
+    case scrollBumps(Int)
 
     var gradientKind: MacFiveMinuteBarStyle.StackedHourInputKind {
         switch self {
         case .keystrokes: return .keystrokes
         case .mouseClicks: return .mouseClicks
         case .travel: return .pixelTravel
+        case .scrollBumps: return .scrollBumps
         }
     }
 
@@ -108,6 +113,8 @@ private enum StackMonthMetric: Hashable {
             return "\(Self.siInteger(n)) clicks"
         case .travel(let px):
             return "\(Self.siTravelPixels(px)) px traveled"
+        case .scrollBumps(let n):
+            return "\(Self.siInteger(n)) scrolls"
         }
     }
 
@@ -123,6 +130,8 @@ private enum StackMonthMetric: Hashable {
             return "\(bucket): \(Self.siInteger(n)) clicks"
         case .travel(let px):
             return "\(bucket): \(Self.siTravelPixels(px)) px traveled"
+        case .scrollBumps(let n):
+            return "\(bucket): \(Self.siInteger(n)) scrolls"
         }
     }
 
@@ -169,6 +178,7 @@ private struct MonthStackLayer: Identifiable {
         case .keystrokes: return "k"
         case .mouseClicks: return "c"
         case .travel: return "t"
+        case .scrollBumps: return "s"
         }
     }
 }
@@ -177,11 +187,13 @@ private struct TwelveMonthUsageModalityVisibility: Equatable {
     var showKeystrokes: Bool
     var showMouseClicks: Bool
     var showTravel: Bool
+    var showScrolls: Bool
 
     static let allVisible = TwelveMonthUsageModalityVisibility(
         showKeystrokes: true,
         showMouseClicks: true,
-        showTravel: true
+        showTravel: true,
+        showScrolls: true
     )
 }
 
@@ -345,7 +357,7 @@ private func twelveMonthColumnUsageMinutes(
         switch layer.metric {
         case .keystrokes:
             keysY += h
-        case .mouseClicks, .travel:
+        case .mouseClicks, .travel, .scrollBumps:
             mouseY += h
         }
     }
@@ -380,6 +392,10 @@ private struct TwelveMonthColumnContextMenuOverlay: View {
                     clicks: slot.mouseClickCount,
                     travelPixels: slot.travelPixels,
                     scrollBumps: slot.scrollBumpCount,
+                    builtinKeystrokes: slot.builtinKeystrokeCount,
+                    builtinTrackpadClicks: slot.builtinTrackpadClickCount,
+                    builtinTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+                    builtinTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
                     rates: .fromUserDefaults()
                 )
                 return MacUsageBreakdownHitRegion(
@@ -390,7 +406,9 @@ private struct TwelveMonthColumnContextMenuOverlay: View {
                         height: max(8, abs(yTop.y - yBottom.y))
                     ),
                     keyboardMinutes: minutes.keyboard,
-                    mouseMinutes: minutes.mouse
+                    mouseMinutes: minutes.mouse,
+                    macbookKeyboardMinutes: minutes.macbookKeyboard,
+                    macbookTrackpadMinutes: minutes.macbookTrackpad
                 )
             }
             MacUsageBreakdownRightClickLayer(regions: regions)
@@ -406,56 +424,88 @@ private struct BuiltMonthMetricStage {
 
 private func buildMonthStackLayers(
     slots: [ComputerUsageMonthSlot],
-    usageVisibility: TwelveMonthUsageModalityVisibility
+    usageVisibility: TwelveMonthUsageModalityVisibility,
+    rates: MacEstimatedWorkloadMinutes.Rates = .fromUserDefaults()
 ) -> [MonthStackLayer] {
     /// Fixed **10 ÷ 3** band per modality (same height meaning as toggling overlays off in the twelve‑hour chart).
     let bandSlice = TwelveMonthCombinedChart.usageBandThird
     let maxComposite = 10.0
-    guard usageVisibility.showKeystrokes || usageVisibility.showMouseClicks || usageVisibility.showTravel else {
+    guard usageVisibility.showKeystrokes || usageVisibility.showMouseClicks || usageVisibility.showTravel || usageVisibility.showScrolls else {
         return []
     }
 
     var rows: [MonthStackLayer] = []
 
     for (i, slot) in slots.enumerated() {
-        let keysFrac = monthCappedFraction(Double(slot.keystrokeCount), cap: TwelveMonthCombinedChart.keystrokesMonthCap)
-        let clickFrac = monthCappedFraction(Double(slot.mouseClickCount), cap: TwelveMonthCombinedChart.clicksMonthCap)
-        let travelFrac = monthCappedFraction(slot.travelPixels, cap: TwelveMonthCombinedChart.travelMonthCap)
+        let keysTotal = slot.keystrokeCount + slot.builtinKeystrokeCount
+        let clicksTotal = slot.mouseClickCount + slot.builtinTrackpadClickCount
+        let travelTotal =
+            slot.travelPixels
+            + MacEstimatedWorkloadMinutes.equivalentTravelPixels(
+                fromTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+                rates: rates
+            )
+        let scrollsTotal = Int(
+            (
+                Double(slot.scrollBumpCount)
+                    + MacEstimatedWorkloadMinutes.equivalentScrollBumps(
+                        fromTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
+                        rates: rates
+                    )
+            ).rounded(.toNearestOrAwayFromZero)
+        )
+
+        let keysFrac = monthCappedFraction(Double(keysTotal), cap: TwelveMonthCombinedChart.keystrokesMonthCap)
+        let clickFrac = monthCappedFraction(Double(clicksTotal), cap: TwelveMonthCombinedChart.clicksMonthCap)
+        let travelFrac = monthCappedFraction(travelTotal, cap: TwelveMonthCombinedChart.travelMonthCap)
+        let scrollFrac = monthCappedFraction(Double(scrollsTotal), cap: TwelveMonthCombinedChart.scrollsMonthCap)
 
         let sKeys = MacFiveMinuteBarStyle.stressAmount(
-            from: Double(slot.keystrokeCount),
+            from: Double(keysTotal),
             cap: TwelveMonthCombinedChart.keystrokesMonthCap,
             excessWidth: TwelveMonthCombinedChart.keystrokesMonthExcess
         )
         let sClicks = MacFiveMinuteBarStyle.stressAmount(
-            from: Double(slot.mouseClickCount),
+            from: Double(clicksTotal),
             cap: TwelveMonthCombinedChart.clicksMonthCap,
             excessWidth: TwelveMonthCombinedChart.clicksMonthExcess
         )
         let sTravel = MacFiveMinuteBarStyle.stressAmount(
-            from: slot.travelPixels,
+            from: travelTotal,
             cap: TwelveMonthCombinedChart.travelMonthCap,
             excessWidth: TwelveMonthCombinedChart.travelMonthExcess
         )
+        let sScrolls = MacFiveMinuteBarStyle.stressAmount(
+            from: Double(scrollsTotal),
+            cap: TwelveMonthCombinedChart.scrollsMonthCap,
+            excessWidth: TwelveMonthCombinedChart.scrollsMonthExcess
+        )
 
-        // Stack bottom → top: pointer travel → clicks → keys (same order as twelve‑hour chart).
+        // Stack bottom → top: pointer travel → scrolls → clicks → keys.
+        // Keep 10÷3 band size so columns with no scrolls match prior heights.
         var stages: [BuiltMonthMetricStage] = []
         if usageVisibility.showTravel {
             let h = travelFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sTravel, metric: .travel(slot.travelPixels)))
+                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sTravel, metric: .travel(travelTotal)))
+            }
+        }
+        if usageVisibility.showScrolls {
+            let h = scrollFrac * bandSlice
+            if h > 0.000_1 {
+                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sScrolls, metric: .scrollBumps(scrollsTotal)))
             }
         }
         if usageVisibility.showMouseClicks {
             let h = clickFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sClicks, metric: .mouseClicks(slot.mouseClickCount)))
+                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sClicks, metric: .mouseClicks(clicksTotal)))
             }
         }
         if usageVisibility.showKeystrokes {
             let h = keysFrac * bandSlice
             if h > 0.000_1 {
-                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sKeys, metric: .keystrokes(slot.keystrokeCount)))
+                stages.append(BuiltMonthMetricStage(unscaledHeight: h, stress: sKeys, metric: .keystrokes(keysTotal)))
             }
         }
 
@@ -498,7 +548,7 @@ private struct TwelveMonthPainPrepared {
             precondition(painsByCurve[curve]?.count == slots.count, "pain array length must match day slots")
         }
         self.slots = slots
-        stackLayers = buildMonthStackLayers(slots: slots, usageVisibility: usageVisibility)
+        stackLayers = buildMonthStackLayers(slots: slots, usageVisibility: usageVisibility, rates: .fromUserDefaults())
 
         var byCurve: [TwelveMonthPainCurve: [MonthPainSample]] = [:]
         for curve in TwelveMonthPainCurve.allCases {
@@ -1083,6 +1133,7 @@ private enum TwelveMonthUsageBarsAppStorage {
     static let showKeysKey = "HandTrack.mac.twelveMonthChartShowKeys"
     static let showClicksKey = "HandTrack.mac.twelveMonthChartShowClicks"
     static let showTravelKey = "HandTrack.mac.twelveMonthChartShowPointerTravel"
+    static let showScrollsKey = "HandTrack.mac.twelveMonthChartShowScrolls"
 
     static let worstLeftKey = "HandTrack.mac.twelveMonthPainWorstLeft"
     static let averageLeftKey = "HandTrack.mac.twelveMonthPainAverageLeft"
@@ -1094,13 +1145,14 @@ private struct TwelveMonthUsageBarsToggleStrip: View {
     @Binding var showKeys: Bool
     @Binding var showClicks: Bool
     @Binding var showTravel: Bool
+    @Binding var showScrolls: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Usage bars")
                 .font(.caption.weight(.semibold))
 
-            // Top → bottom matches bar stack: keys (top of column) → clicks → pointer (base).
+            // Top → bottom matches bar stack: keys → clicks → scrolls → pointer (base).
             VStack(alignment: .leading, spacing: 4) {
                 Toggle("Keys", isOn: $showKeys)
                     .toggleStyle(.checkbox)
@@ -1109,7 +1161,11 @@ private struct TwelveMonthUsageBarsToggleStrip: View {
                 Toggle("Clicks", isOn: $showClicks)
                     .toggleStyle(.checkbox)
                     .font(.caption2)
-                    .help("Mouse clicks segment (middle of each column)")
+                    .help("Mouse clicks segment")
+                Toggle("Scrolls", isOn: $showScrolls)
+                    .toggleStyle(.checkbox)
+                    .font(.caption2)
+                    .help("Mouse-wheel scroll bumps")
                 Toggle("Pointer", isOn: $showTravel)
                     .toggleStyle(.checkbox)
                     .font(.caption2)
@@ -1138,6 +1194,7 @@ struct MacTwelveMonthStackedUsagePainChart: View {
     @AppStorage(TwelveMonthUsageBarsAppStorage.showKeysKey) private var twelveMonthChartShowKeys = true
     @AppStorage(TwelveMonthUsageBarsAppStorage.showClicksKey) private var twelveMonthChartShowClicks = true
     @AppStorage(TwelveMonthUsageBarsAppStorage.showTravelKey) private var twelveMonthChartShowTravel = true
+    @AppStorage(TwelveMonthUsageBarsAppStorage.showScrollsKey) private var twelveMonthChartShowScrolls = true
 
     @AppStorage(TwelveMonthUsageBarsAppStorage.worstLeftKey) private var painWorstLeft = true
     @AppStorage(TwelveMonthUsageBarsAppStorage.averageLeftKey) private var painAverageLeft = true
@@ -1175,7 +1232,8 @@ struct MacTwelveMonthStackedUsagePainChart: View {
         let usageBarsVisibility = TwelveMonthUsageModalityVisibility(
             showKeystrokes: twelveMonthChartShowKeys,
             showMouseClicks: twelveMonthChartShowClicks,
-            showTravel: twelveMonthChartShowTravel
+            showTravel: twelveMonthChartShowTravel,
+            showScrolls: twelveMonthChartShowScrolls
         )
         let painVisibility = TwelveMonthPainVisibility(
             worstLeft: painWorstLeft,
@@ -1192,7 +1250,8 @@ struct MacTwelveMonthStackedUsagePainChart: View {
                     TwelveMonthUsageBarsToggleStrip(
                         showKeys: $twelveMonthChartShowKeys,
                         showClicks: $twelveMonthChartShowClicks,
-                        showTravel: $twelveMonthChartShowTravel
+                        showTravel: $twelveMonthChartShowTravel,
+                        showScrolls: $twelveMonthChartShowScrolls
                     )
 
                     TwelveMonthPainGraphsToggleMatrix(visibility: painVisibilityBinding)
@@ -1216,10 +1275,11 @@ struct MacTwelveMonthStackedUsagePainChart: View {
         .onChange(of: twelveMonthChartShowKeys) { _, _ in ensureUsageBarsInvariant() }
         .onChange(of: twelveMonthChartShowClicks) { _, _ in ensureUsageBarsInvariant() }
         .onChange(of: twelveMonthChartShowTravel) { _, _ in ensureUsageBarsInvariant() }
+        .onChange(of: twelveMonthChartShowScrolls) { _, _ in ensureUsageBarsInvariant() }
     }
 
     private func ensureUsageBarsInvariant() {
-        if !twelveMonthChartShowKeys && !twelveMonthChartShowClicks && !twelveMonthChartShowTravel {
+        if !twelveMonthChartShowKeys && !twelveMonthChartShowClicks && !twelveMonthChartShowTravel && !twelveMonthChartShowScrolls {
             twelveMonthChartShowKeys = true
         }
     }

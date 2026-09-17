@@ -17,23 +17,73 @@ private struct DailyPainRollupSnapshot {
 @MainActor
 final class HandTrackStore: ObservableObject {
     @Published private(set) var hourlyLogs: [HourlyHandLog] = []
-    @Published private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
-    @Published private(set) var mouseClickBuckets: [MouseClickMinuteBucket] = []
-    @Published private(set) var mouseTravelBuckets: [MouseTravelMinuteBucket] = []
-    @Published private(set) var scrollBumpBuckets: [ScrollBumpMinuteBucket] = []
+    /// Live input series are intentionally *not* `@Published`. Mutating them on every
+    /// keystroke used to invalidate the whole SwiftUI dashboard; macOS UI observes
+    /// ``livePulse`` (coalesced) instead. Call ``notifyStructuralChange()`` after
+    /// bulk loads / non-live edits. iOS still gets `objectWillChange` from the live flush.
+    private(set) var keystrokeBuckets: [KeystrokeMinuteBucket] = []
+    private(set) var mouseClickBuckets: [MouseClickMinuteBucket] = []
+    private(set) var mouseTravelBuckets: [MouseTravelMinuteBucket] = []
+    private(set) var scrollBumpBuckets: [ScrollBumpMinuteBucket] = []
+    private(set) var builtinKeyboardBuckets: [BuiltinKeyboardMinuteBucket] = []
+    private(set) var builtinTrackpadClickBuckets: [BuiltinTrackpadClickMinuteBucket] = []
+    private(set) var builtinTrackpadTravelBuckets: [BuiltinTrackpadTravelMinuteBucket] = []
+    private(set) var builtinTrackpadScrollBuckets: [BuiltinTrackpadScrollMinuteBucket] = []
     @Published private(set) var dailyPainRollups: [DailyPainRollup] = []
 
     let storageDirectory: URL
+    /// Mac live charts observe this instead of the whole store, so typing/scroll
+    /// does not rebuild the heavy 12h/12d Charts stack.
+    let livePulse = HandTrackLivePulse()
 
     private let databaseURL: URL
     private var database: OpaquePointer?
     /// Pain figures keyed by ``Date/startOfHandTrackingDay`` epoch (`timeIntervalSince1970`), mirrored in ``dailyPainRollups``.
     private var dailyPainRollupSnapshots: [TimeInterval: DailyPainRollupSnapshot] = [:]
 
-    /// Coalesce rapid live-input publishes so scrolling the dashboard doesn't rebuild Charts every notch.
-    private var livePublishScheduled = false
     private var lastLivePublishAt: CFAbsoluteTime = 0
-    private static let livePublishMinInterval: CFAbsoluteTime = 0.08
+    private var lastDeferredLivePublishAt: CFAbsoluteTime = 0
+    /// Live UI coalesce for keys/clicks/travel/scroll (~5 updates/sec).
+    private static let livePublishMinInterval: CFAbsoluteTime = 0.18
+
+    /// Keys/clicks — flush on the short live UI cadence.
+    private var pendingLiveKinds: Set<HandTrackLivePulse.Kind> = []
+    /// Travel/scroll — same cadence, separate queue so key flushes don't rebuild those charts.
+    private var pendingDeferredLiveKinds: Set<HandTrackLivePulse.Kind> = []
+    private var livePublishScheduled = false
+    private var deferredLivePublishScheduled = false
+    private var scrollGateRetryScheduled = false
+
+    #if os(macOS)
+    /// Set by the Mac app to pause Chart invalidation while a dashboard ScrollView is moving.
+    static var shouldDeferLiveUIFlush: () -> Bool = { false }
+    #endif
+
+    /// Coalesce SQLite writes so typing doesn't sync-write on every key.
+    private var persistFlushScheduled = false
+    private var dirtyKeystrokeMinutes = Set<TimeInterval>()
+    private var dirtyMouseClickMinutes = Set<TimeInterval>()
+    private var dirtyMouseTravelMinutes = Set<TimeInterval>()
+    private var dirtyScrollBumpMinutes = Set<TimeInterval>()
+    private var dirtyBuiltinKeyboardMinutes = Set<TimeInterval>()
+    private var dirtyBuiltinTrackpadClickMinutes = Set<TimeInterval>()
+    private var dirtyBuiltinTrackpadTravelMinutes = Set<TimeInterval>()
+    private var dirtyBuiltinTrackpadScrollMinutes = Set<TimeInterval>()
+    private static let persistFlushDelay: TimeInterval = 2.0
+
+    // #region agent log
+    private var debugSaveSampleCount = 0
+    private var debugSaveTotalNanos: UInt64 = 0
+    private var debugPublishCount = 0
+    private var debugRecordCount = 0
+    private static let debugLogPath = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-b2bfc5.log"
+    private static let debugLogQueue = DispatchQueue(label: "HandTrack.debugStoreLog")
+    // #endregion
+
+    /// For rare non-live mutations (load, migrations) that views may read without a pulse bump.
+    func notifyStructuralChange() {
+        objectWillChange.send()
+    }
 
     init(storageDirectory: URL? = nil) {
         let baseDirectory = storageDirectory ?? Self.defaultStorageDirectory()
@@ -41,6 +91,54 @@ final class HandTrackStore: ObservableObject {
         self.databaseURL = baseDirectory.appendingPathComponent("handtrack.sqlite")
 
         load()
+        #if os(macOS)
+        migrateMisattributedMacBookKeystrokesToExternalLastHourIfNeeded()
+        #endif
+    }
+
+    /// One-time: move recent MacBook built-in keystroke buckets into the external keyboard
+    /// series (Karabiner misattribution counted docked typing as MacBook).
+    func migrateMisattributedMacBookKeystrokesToExternalLastHourIfNeeded(reference: Date = Date()) {
+        let flagKey = "HandTrack.migratedMisattributedMacBookKeystrokesToExternalLastHour.v3"
+        guard !UserDefaults.standard.bool(forKey: flagKey) else { return }
+
+        // Slightly over one hour so minute-boundary / launch lag does not leave stragglers.
+        let cutoff = reference.addingTimeInterval(-90 * 60).startOfMinute
+        var transferredTotal = 0
+        var clearedMinuteStarts: [Date] = []
+
+        for bucket in builtinKeyboardBuckets where bucket.minuteStart >= cutoff && bucket.keyCount > 0 {
+            let moveCount = bucket.keyCount
+            transferredTotal += moveCount
+
+            if let index = keystrokeBuckets.firstIndex(where: { $0.minuteStart == bucket.minuteStart }) {
+                keystrokeBuckets[index].keyCount += moveCount
+                save(keystrokeBuckets[index])
+            } else {
+                let external = KeystrokeMinuteBucket(
+                    minuteStart: bucket.minuteStart,
+                    keyCount: moveCount
+                )
+                keystrokeBuckets.append(external)
+                save(external)
+            }
+            clearedMinuteStarts.append(bucket.minuteStart)
+        }
+
+        if !clearedMinuteStarts.isEmpty {
+            let cleared = Set(clearedMinuteStarts)
+            builtinKeyboardBuckets.removeAll { cleared.contains($0.minuteStart) }
+            for minuteStart in clearedMinuteStarts {
+                deleteBuiltinKeyboardBucket(minuteStart: minuteStart)
+            }
+            keystrokeBuckets.sort { $0.minuteStart < $1.minuteStart }
+            publishLiveBucketsChanged()
+        }
+
+        UserDefaults.standard.set(true, forKey: flagKey)
+        if transferredTotal > 0 {
+            print("HandTrack: moved \(transferredTotal) keystrokes from last hour MacBook series into external keyboard")
+        }
     }
 
     deinit {
@@ -118,82 +216,544 @@ final class HandTrackStore: ObservableObject {
     }
 
     func recordKeystroke(at timestamp: Date = Date()) {
+        recordKeystrokes(1, at: timestamp)
+    }
+
+    func recordKeystrokes(_ count: Int, at timestamp: Date = Date()) {
+        guard count > 0 else { return }
         let minuteStart = timestamp.startOfMinute
-        if let index = keystrokeBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
-            keystrokeBuckets[index].keyCount += 1
-            save(keystrokeBuckets[index])
-        } else {
-            let bucket = KeystrokeMinuteBucket(minuteStart: minuteStart, keyCount: 1)
-            keystrokeBuckets.append(bucket)
-            keystrokeBuckets.sort { $0.minuteStart < $1.minuteStart }
-            save(bucket)
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &keystrokeBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.keyCount += count },
+            create: { KeystrokeMinuteBucket(minuteStart: minuteStart, keyCount: count) }
+        )
+        markDirtyKeystroke(minuteStart)
+        // #region agent log
+        debugRecordCount += count
+        if debugRecordCount <= 8 || debugRecordCount % 50 == 0 {
+            agentDebugLog(
+                hypothesisId: "P1",
+                location: "HandTrackStore.recordKeystrokes",
+                message: "record_keystroke",
+                data: [
+                    "runId": "perf-responsive",
+                    "n": debugRecordCount,
+                    "batch": count,
+                    "publishN": debugPublishCount,
+                ]
+            )
         }
-        // In-place bucket mutations don't go through @Published's setter.
-        publishLiveBucketsChanged()
+        // #endregion
+        publishLiveKind(.keystrokes, deferForScrollTravel: false)
+        #if os(macOS)
+        livePulse.noteDebug(.keystrokes, amount: Double(count))
+        #endif
     }
 
     func recordMouseClick(at timestamp: Date = Date()) {
+        recordMouseClicks(1, at: timestamp)
+    }
+
+    func recordMouseClicks(_ count: Int, at timestamp: Date = Date()) {
+        guard count > 0 else { return }
         let minuteStart = timestamp.startOfMinute
-        if let index = mouseClickBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
-            mouseClickBuckets[index].clickCount += 1
-            saveMouseClick(mouseClickBuckets[index])
-        } else {
-            let bucket = MouseClickMinuteBucket(minuteStart: minuteStart, clickCount: 1)
-            mouseClickBuckets.append(bucket)
-            mouseClickBuckets.sort { $0.minuteStart < $1.minuteStart }
-            saveMouseClick(bucket)
-        }
-        publishLiveBucketsChanged()
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &mouseClickBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.clickCount += count },
+            create: { MouseClickMinuteBucket(minuteStart: minuteStart, clickCount: count) }
+        )
+        markDirtyMouseClick(minuteStart)
+        publishLiveKind(.mouseClicks, deferForScrollTravel: false)
+        #if os(macOS)
+        livePulse.noteDebug(.mouseClicks, amount: Double(count))
+        #endif
+    }
+
+    func recordBuiltinKeystrokes(_ count: Int, at timestamp: Date = Date()) {
+        guard count > 0 else { return }
+        let minuteStart = timestamp.startOfMinute
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &builtinKeyboardBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.keyCount += count },
+            create: { BuiltinKeyboardMinuteBucket(minuteStart: minuteStart, keyCount: count) }
+        )
+        markDirtyBuiltinKeyboard(minuteStart)
+        publishLiveKind(.builtinKeystrokes, deferForScrollTravel: false)
+        #if os(macOS)
+        livePulse.noteDebug(.builtinKeystrokes, amount: Double(count))
+        #endif
     }
 
     func recordMouseTravelPixels(_ pixels: Double, at timestamp: Date = Date()) {
         guard pixels.isFinite, pixels > 0 else { return }
         let minuteStart = timestamp.startOfMinute
-        if let index = mouseTravelBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
-            mouseTravelBuckets[index].travelPixels += pixels
-            saveMouseTravel(mouseTravelBuckets[index])
-        } else {
-            let bucket = MouseTravelMinuteBucket(minuteStart: minuteStart, travelPixels: pixels)
-            mouseTravelBuckets.append(bucket)
-            mouseTravelBuckets.sort { $0.minuteStart < $1.minuteStart }
-            saveMouseTravel(bucket)
-        }
-        publishLiveBucketsChanged()
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &mouseTravelBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.travelPixels += pixels },
+            create: { MouseTravelMinuteBucket(minuteStart: minuteStart, travelPixels: pixels) }
+        )
+        markDirtyMouseTravel(minuteStart)
+        publishLiveKind(.mouseTravel, deferForScrollTravel: true)
+        #if os(macOS)
+        livePulse.noteDebug(.mouseTravel, amount: pixels)
+        #endif
     }
 
     func recordScrollBumps(_ count: Int = 1, at timestamp: Date = Date()) {
         guard count > 0 else { return }
         let minuteStart = timestamp.startOfMinute
-        if let index = scrollBumpBuckets.firstIndex(where: { $0.minuteStart == minuteStart }) {
-            scrollBumpBuckets[index].bumpCount += count
-            saveScrollBump(scrollBumpBuckets[index])
-        } else {
-            let bucket = ScrollBumpMinuteBucket(minuteStart: minuteStart, bumpCount: count)
-            scrollBumpBuckets.append(bucket)
-            scrollBumpBuckets.sort { $0.minuteStart < $1.minuteStart }
-            saveScrollBump(bucket)
-        }
-        publishLiveBucketsChanged()
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &scrollBumpBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.bumpCount += count },
+            create: { ScrollBumpMinuteBucket(minuteStart: minuteStart, bumpCount: count) }
+        )
+        markDirtyScrollBump(minuteStart)
+        publishLiveKind(.scrollBumps, deferForScrollTravel: true)
+        #if os(macOS)
+        livePulse.noteDebug(.scrollBumps, amount: Double(count))
+        #endif
     }
 
-    /// Notify SwiftUI of live input changes, coalesced so bursty scroll/travel doesn't jank the window.
-    private func publishLiveBucketsChanged() {
-        let now = CFAbsoluteTimeGetCurrent()
-        if now - lastLivePublishAt >= Self.livePublishMinInterval {
-            lastLivePublishAt = now
-            objectWillChange.send()
+    func recordBuiltinKeystroke(at timestamp: Date = Date()) {
+        recordBuiltinKeystrokes(1, at: timestamp)
+    }
+
+    func recordBuiltinTrackpadClick(at timestamp: Date = Date()) {
+        let minuteStart = timestamp.startOfMinute
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &builtinTrackpadClickBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.clickCount += 1 },
+            create: { BuiltinTrackpadClickMinuteBucket(minuteStart: minuteStart, clickCount: 1) }
+        )
+        markDirtyBuiltinTrackpadClick(minuteStart)
+        publishLiveKind(.builtinTrackpadClicks, deferForScrollTravel: false)
+        #if os(macOS)
+        livePulse.noteDebug(.builtinTrackpadClicks, amount: 1)
+        #endif
+    }
+
+    func recordBuiltinTrackpadTravelPixels(_ pixels: Double, at timestamp: Date = Date()) {
+        guard pixels.isFinite, pixels > 0 else { return }
+        let minuteStart = timestamp.startOfMinute
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &builtinTrackpadTravelBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.travelPixels += pixels },
+            create: { BuiltinTrackpadTravelMinuteBucket(minuteStart: minuteStart, travelPixels: pixels) }
+        )
+        markDirtyBuiltinTrackpadTravel(minuteStart)
+        publishLiveKind(.builtinTrackpadTravel, deferForScrollTravel: true)
+        #if os(macOS)
+        livePulse.noteDebug(.builtinTrackpadTravel, amount: pixels)
+        #endif
+    }
+
+    func recordBuiltinTrackpadScrollPixels(_ pixels: Double, at timestamp: Date = Date()) {
+        guard pixels.isFinite, pixels > 0 else { return }
+        let minuteStart = timestamp.startOfMinute
+        upsertSortedMinuteBucket(
+            minuteStart: minuteStart,
+            buckets: &builtinTrackpadScrollBuckets,
+            minuteOf: { $0.minuteStart },
+            increment: { $0.scrollPixels += pixels },
+            create: { BuiltinTrackpadScrollMinuteBucket(minuteStart: minuteStart, scrollPixels: pixels) }
+        )
+        markDirtyBuiltinTrackpadScroll(minuteStart)
+        publishLiveKind(.builtinTrackpadScroll, deferForScrollTravel: true)
+        #if os(macOS)
+        livePulse.noteDebug(.builtinTrackpadScroll, amount: pixels)
+        #endif
+    }
+
+    /// Hot path: current minute is almost always the last bucket — avoid O(n) scans per event.
+    private func upsertSortedMinuteBucket<Bucket>(
+        minuteStart: Date,
+        buckets: inout [Bucket],
+        minuteOf: (Bucket) -> Date,
+        increment: (inout Bucket) -> Void,
+        create: () -> Bucket
+    ) {
+        if let last = buckets.last, minuteOf(last) == minuteStart {
+            increment(&buckets[buckets.count - 1])
             return
         }
-        guard !livePublishScheduled else { return }
-        livePublishScheduled = true
-        let delay = Self.livePublishMinInterval - (now - lastLivePublishAt)
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, delay)) { [weak self] in
-            guard let self else { return }
-            self.livePublishScheduled = false
-            self.lastLivePublishAt = CFAbsoluteTimeGetCurrent()
-            self.objectWillChange.send()
+        if buckets.last.map({ minuteOf($0) < minuteStart }) ?? true {
+            buckets.append(create())
+            return
+        }
+        if let index = buckets.firstIndex(where: { minuteOf($0) == minuteStart }) {
+            increment(&buckets[index])
+        } else {
+            buckets.append(create())
+            buckets.sort { minuteOf($0) < minuteOf($1) }
         }
     }
+
+    private func markDirtyKeystroke(_ minuteStart: Date) {
+        dirtyKeystrokeMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyMouseClick(_ minuteStart: Date) {
+        dirtyMouseClickMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyMouseTravel(_ minuteStart: Date) {
+        dirtyMouseTravelMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyScrollBump(_ minuteStart: Date) {
+        dirtyScrollBumpMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyBuiltinKeyboard(_ minuteStart: Date) {
+        dirtyBuiltinKeyboardMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyBuiltinTrackpadClick(_ minuteStart: Date) {
+        dirtyBuiltinTrackpadClickMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyBuiltinTrackpadTravel(_ minuteStart: Date) {
+        dirtyBuiltinTrackpadTravelMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func markDirtyBuiltinTrackpadScroll(_ minuteStart: Date) {
+        dirtyBuiltinTrackpadScrollMinutes.insert(minuteStart.timeIntervalSince1970)
+        schedulePersistFlush()
+    }
+
+    private func schedulePersistFlush() {
+        guard !persistFlushScheduled else { return }
+        persistFlushScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.persistFlushDelay) { [weak self] in
+            self?.flushDirtyPersists()
+        }
+    }
+
+    private func flushDirtyPersists() {
+        persistFlushScheduled = false
+
+        let keystrokes: [KeystrokeMinuteBucket] = dirtyKeystrokeMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return keystrokeBuckets.first { $0.minuteStart == minute }
+        }
+        let mouseClicks: [MouseClickMinuteBucket] = dirtyMouseClickMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return mouseClickBuckets.first { $0.minuteStart == minute }
+        }
+        let mouseTravel: [MouseTravelMinuteBucket] = dirtyMouseTravelMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return mouseTravelBuckets.first { $0.minuteStart == minute }
+        }
+        let scrollBumps: [ScrollBumpMinuteBucket] = dirtyScrollBumpMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return scrollBumpBuckets.first { $0.minuteStart == minute }
+        }
+        let builtinKeys: [BuiltinKeyboardMinuteBucket] = dirtyBuiltinKeyboardMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return builtinKeyboardBuckets.first { $0.minuteStart == minute }
+        }
+        let builtinClicks: [BuiltinTrackpadClickMinuteBucket] = dirtyBuiltinTrackpadClickMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return builtinTrackpadClickBuckets.first { $0.minuteStart == minute }
+        }
+        let builtinTravel: [BuiltinTrackpadTravelMinuteBucket] = dirtyBuiltinTrackpadTravelMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return builtinTrackpadTravelBuckets.first { $0.minuteStart == minute }
+        }
+        let builtinScroll: [BuiltinTrackpadScrollMinuteBucket] = dirtyBuiltinTrackpadScrollMinutes.compactMap { epoch in
+            let minute = Date(timeIntervalSince1970: epoch)
+            return builtinTrackpadScrollBuckets.first { $0.minuteStart == minute }
+        }
+        let dirtyCount =
+            keystrokes.count + mouseClicks.count + mouseTravel.count + scrollBumps.count
+            + builtinKeys.count + builtinClicks.count + builtinTravel.count + builtinScroll.count
+
+        dirtyKeystrokeMinutes.removeAll(keepingCapacity: true)
+        dirtyMouseClickMinutes.removeAll(keepingCapacity: true)
+        dirtyMouseTravelMinutes.removeAll(keepingCapacity: true)
+        dirtyScrollBumpMinutes.removeAll(keepingCapacity: true)
+        dirtyBuiltinKeyboardMinutes.removeAll(keepingCapacity: true)
+        dirtyBuiltinTrackpadClickMinutes.removeAll(keepingCapacity: true)
+        dirtyBuiltinTrackpadTravelMinutes.removeAll(keepingCapacity: true)
+        dirtyBuiltinTrackpadScrollMinutes.removeAll(keepingCapacity: true)
+
+        guard dirtyCount > 0 else { return }
+
+        // #region agent log
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        // #endregion
+        for bucket in keystrokes { save(bucket) }
+        for bucket in mouseClicks { saveMouseClick(bucket) }
+        for bucket in mouseTravel { saveMouseTravel(bucket) }
+        for bucket in scrollBumps { saveScrollBump(bucket) }
+        for bucket in builtinKeys { saveBuiltinKeyboard(bucket) }
+        for bucket in builtinClicks { saveBuiltinTrackpadClick(bucket) }
+        for bucket in builtinTravel { saveBuiltinTrackpadTravel(bucket) }
+        for bucket in builtinScroll { saveBuiltinTrackpadScroll(bucket) }
+        // #region agent log
+        debugSampleSave(
+            kind: "coalesced_flush",
+            startedNanos: t0,
+            extra: ["dirty": dirtyCount, "persistDelaySec": Self.persistFlushDelay]
+        )
+        // #endregion
+    }
+
+    func builtinKeyboardActivityInLastHours(_ hours: Int, reference: Date = Date()) -> Bool {
+        let windowStart = reference.addingTimeInterval(-Double(max(1, hours)) * 3600.0)
+        return builtinKeyboardBuckets.contains { bucket in
+            bucket.minuteStart >= windowStart && bucket.minuteStart <= reference && bucket.keyCount > 0
+        }
+    }
+
+    func builtinTrackpadActivityInLastHours(_ hours: Int, reference: Date = Date()) -> Bool {
+        let windowStart = reference.addingTimeInterval(-Double(max(1, hours)) * 3600.0)
+        let inWindow: (Date) -> Bool = { $0 >= windowStart && $0 <= reference }
+        if builtinTrackpadClickBuckets.contains(where: { inWindow($0.minuteStart) && $0.clickCount > 0 }) {
+            return true
+        }
+        if builtinTrackpadTravelBuckets.contains(where: { inWindow($0.minuteStart) && $0.travelPixels > 0 }) {
+            return true
+        }
+        if builtinTrackpadScrollBuckets.contains(where: { inWindow($0.minuteStart) && $0.scrollPixels > 0 }) {
+            return true
+        }
+        return false
+    }
+
+    /// Used by one-off migrations that touch multiple live series at once.
+    private func publishLiveBucketsChanged() {
+        publishLiveKind(.keystrokes, deferForScrollTravel: false)
+        publishLiveKind(.builtinKeystrokes, deferForScrollTravel: false)
+    }
+
+    private func publishLiveKind(_ kind: HandTrackLivePulse.Kind, deferForScrollTravel: Bool) {
+        #if os(macOS)
+        if deferForScrollTravel {
+            pendingDeferredLiveKinds.insert(kind)
+            scheduleLiveFlush(deferred: true)
+            return
+        }
+        #endif
+        pendingLiveKinds.insert(kind)
+        scheduleLiveFlush(deferred: false)
+    }
+
+    private func scheduleLiveFlush(deferred: Bool) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let last = deferred ? lastDeferredLivePublishAt : lastLivePublishAt
+        if now - last >= Self.livePublishMinInterval {
+            flushPendingLiveKinds(
+                reason: deferred ? "travel_scroll_immediate" : "immediate",
+                deferred: deferred
+            )
+            return
+        }
+        if deferred {
+            guard !deferredLivePublishScheduled else { return }
+            deferredLivePublishScheduled = true
+            let delay = Self.livePublishMinInterval - (now - last)
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, delay)) { [weak self] in
+                guard let self else { return }
+                self.deferredLivePublishScheduled = false
+                self.flushPendingLiveKinds(reason: "travel_scroll_coalesced", deferred: true)
+            }
+        } else {
+            guard !livePublishScheduled else { return }
+            livePublishScheduled = true
+            let delay = Self.livePublishMinInterval - (now - last)
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, delay)) { [weak self] in
+                guard let self else { return }
+                self.livePublishScheduled = false
+                self.flushPendingLiveKinds(reason: "coalesced", deferred: false)
+            }
+        }
+    }
+
+    private func flushPendingLiveKinds(reason: String, deferred: Bool) {
+        #if os(macOS)
+        if Self.shouldDeferLiveUIFlush() {
+            // #region agent log
+            agentDebugLog(
+                hypothesisId: "P3",
+                location: "HandTrackStore.flushPendingLiveKinds",
+                message: "live_publish_deferred_scroll",
+                data: [
+                    "runId": "perf-scroll",
+                    "reason": reason,
+                    "deferred": deferred,
+                    "pendingLive": pendingLiveKinds.count,
+                    "pendingDeferred": pendingDeferredLiveKinds.count,
+                ]
+            )
+            // #endregion
+            scheduleFlushAfterScrollGate(deferred: deferred)
+            return
+        }
+        #endif
+
+        let kinds: Set<HandTrackLivePulse.Kind>
+        if deferred {
+            kinds = pendingDeferredLiveKinds
+            pendingDeferredLiveKinds.removeAll(keepingCapacity: true)
+        } else {
+            kinds = pendingLiveKinds
+            pendingLiveKinds.removeAll(keepingCapacity: true)
+        }
+        guard !kinds.isEmpty else { return }
+        if deferred {
+            lastDeferredLivePublishAt = CFAbsoluteTimeGetCurrent()
+        } else {
+            lastLivePublishAt = CFAbsoluteTimeGetCurrent()
+        }
+        let started = CFAbsoluteTimeGetCurrent()
+        // #region agent log
+        debugPublishCount += 1
+        if debugPublishCount <= 40 || debugPublishCount % 20 == 0 {
+            agentDebugLog(
+                hypothesisId: "P1",
+                location: "HandTrackStore.flushPendingLiveKinds",
+                message: "live_publish",
+                data: [
+                    "runId": "perf-scroll",
+                    "n": debugPublishCount,
+                    "recordN": debugRecordCount,
+                    "reason": reason,
+                    "deferredPath": deferred,
+                    "kinds": kinds.map { String(describing: $0) }.sorted(),
+                    "kindCount": kinds.count,
+                ]
+            )
+        }
+        // #endregion
+        #if os(macOS)
+        for kind in kinds {
+            livePulse.bump(kind)
+        }
+        // #region agent log
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+        if elapsedMs >= 8 || debugPublishCount <= 10 {
+            agentDebugLog(
+                hypothesisId: "P4",
+                location: "HandTrackStore.flushPendingLiveKinds",
+                message: "live_publish_cost",
+                data: [
+                    "runId": "perf-scroll",
+                    "ms": elapsedMs,
+                    "reason": reason,
+                    "kindCount": kinds.count,
+                ]
+            )
+        }
+        // #endregion
+        #else
+        objectWillChange.send()
+        #endif
+    }
+
+    #if os(macOS)
+    private func scheduleFlushAfterScrollGate(deferred: Bool) {
+        _ = deferred
+        guard !scrollGateRetryScheduled else { return }
+        scrollGateRetryScheduled = true
+        scheduleScrollGateRetry()
+    }
+
+    private func scheduleScrollGateRetry() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            if Self.shouldDeferLiveUIFlush() {
+                self.scheduleScrollGateRetry()
+                return
+            }
+            self.scrollGateRetryScheduled = false
+            if !self.pendingLiveKinds.isEmpty {
+                self.flushPendingLiveKinds(reason: "after_scroll_gate", deferred: false)
+            }
+            if !self.pendingDeferredLiveKinds.isEmpty {
+                self.flushPendingLiveKinds(reason: "after_scroll_gate", deferred: true)
+            }
+        }
+    }
+    #endif
+
+    // #region agent log
+    private func debugSampleSave(kind: String, startedNanos: UInt64, extra: [String: Any] = [:]) {
+        let elapsed = DispatchTime.now().uptimeNanoseconds &- startedNanos
+        debugSaveSampleCount += 1
+        debugSaveTotalNanos += elapsed
+        if debugSaveSampleCount <= 20 || debugSaveSampleCount % 20 == 0 || elapsed > 2_000_000 {
+            var data: [String: Any] = [
+                "runId": "post-fix-lag",
+                "kind": kind,
+                "saveUs": Int(elapsed / 1_000),
+                "n": debugSaveSampleCount,
+                "avgUs": Int(debugSaveTotalNanos / UInt64(debugSaveSampleCount) / 1_000),
+                "onMain": Thread.isMainThread,
+            ]
+            for (k, v) in extra { data[k] = v }
+            agentDebugLog(
+                hypothesisId: "L2",
+                location: "HandTrackStore.saveSample",
+                message: "sqlite_save_sample",
+                data: data
+            )
+        }
+    }
+
+    private func agentDebugLog(
+        hypothesisId: String,
+        location: String,
+        message: String,
+        data: [String: Any] = [:]
+    ) {
+        var payload: [String: Any] = [
+            "sessionId": "b2bfc5",
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "message": message,
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+            "data": data,
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let json = try? JSONSerialization.data(withJSONObject: payload),
+              let line = String(data: json, encoding: .utf8)
+        else { return }
+        let path = Self.debugLogPath
+        Self.debugLogQueue.async {
+            if !FileManager.default.fileExists(atPath: path) {
+                FileManager.default.createFile(atPath: path, contents: nil)
+            }
+            guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return }
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            if let bytes = (line + "\n").data(using: .utf8) {
+                try? handle.write(contentsOf: bytes)
+            }
+        }
+    }
+    // #endregion
 
     func scrollsInLastMinutes(_ minutes: Int, reference: Date = Date()) -> Int {
         let window = max(1, minutes)
@@ -317,13 +877,17 @@ final class HandTrackStore: ObservableObject {
         count: Int = 12,
         minutesPerSlot: Int = 5
     ) -> [KeystrokeFiveMinuteSlot] {
-        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
-            let keyCount = keystrokeBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
-                return sum + bucket.keyCount
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: keystrokeBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { Double($0.keyCount) },
+            makeSlot: { start, total, duration in
+                KeystrokeFiveMinuteSlot(slotStart: start, keyCount: Int(total.rounded()), durationMinutes: duration)
             }
-            return KeystrokeFiveMinuteSlot(slotStart: slotStart, keyCount: keyCount, durationMinutes: duration)
-        }
+        )
     }
 
     func mouseClicksByFiveMinuteSlotsTrailing(
@@ -331,13 +895,17 @@ final class HandTrackStore: ObservableObject {
         count: Int = 12,
         minutesPerSlot: Int = 5
     ) -> [MouseClickFiveMinuteSlot] {
-        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
-            let clickCount = mouseClickBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
-                return sum + bucket.clickCount
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: mouseClickBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { Double($0.clickCount) },
+            makeSlot: { start, total, duration in
+                MouseClickFiveMinuteSlot(slotStart: start, clickCount: Int(total.rounded()), durationMinutes: duration)
             }
-            return MouseClickFiveMinuteSlot(slotStart: slotStart, clickCount: clickCount, durationMinutes: duration)
-        }
+        )
     }
 
     func mouseTravelByFiveMinuteSlotsTrailing(
@@ -345,13 +913,17 @@ final class HandTrackStore: ObservableObject {
         count: Int = 12,
         minutesPerSlot: Int = 5
     ) -> [MouseTravelFiveMinuteSlot] {
-        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
-            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
-                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
-                return sum + bucket.travelPixels
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: mouseTravelBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { $0.travelPixels },
+            makeSlot: { start, total, duration in
+                MouseTravelFiveMinuteSlot(slotStart: start, travelPixels: total, durationMinutes: duration)
             }
-            return MouseTravelFiveMinuteSlot(slotStart: slotStart, travelPixels: travelPixels, durationMinutes: duration)
-        }
+        )
     }
 
     func scrollBumpsByFiveMinuteSlotsTrailing(
@@ -359,32 +931,135 @@ final class HandTrackStore: ObservableObject {
         count: Int = 12,
         minutesPerSlot: Int = 5
     ) -> [ScrollBumpFiveMinuteSlot] {
-        trailingCountSlots(reference: reference, count: count, minutesPerSlot: minutesPerSlot) { slotStart, slotEnd, duration in
-            let bumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= slotStart, bucket.minuteStart < slotEnd else { return sum }
-                return sum + bucket.bumpCount
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: scrollBumpBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { Double($0.bumpCount) },
+            makeSlot: { start, total, duration in
+                ScrollBumpFiveMinuteSlot(slotStart: start, bumpCount: Int(total.rounded()), durationMinutes: duration)
             }
-            return ScrollBumpFiveMinuteSlot(slotStart: slotStart, bumpCount: bumpCount, durationMinutes: duration)
-        }
+        )
     }
 
-    private func trailingCountSlots<Slot>(
+    func builtinKeystrokesByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [BuiltinKeyboardFiveMinuteSlot] {
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: builtinKeyboardBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { Double($0.keyCount) },
+            makeSlot: { start, total, duration in
+                BuiltinKeyboardFiveMinuteSlot(slotStart: start, keyCount: Int(total.rounded()), durationMinutes: duration)
+            }
+        )
+    }
+
+    func builtinTrackpadClicksByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [BuiltinTrackpadClickFiveMinuteSlot] {
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: builtinTrackpadClickBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { Double($0.clickCount) },
+            makeSlot: { start, total, duration in
+                BuiltinTrackpadClickFiveMinuteSlot(slotStart: start, clickCount: Int(total.rounded()), durationMinutes: duration)
+            }
+        )
+    }
+
+    func builtinTrackpadTravelByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [BuiltinTrackpadTravelFiveMinuteSlot] {
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: builtinTrackpadTravelBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { $0.travelPixels },
+            makeSlot: { start, total, duration in
+                BuiltinTrackpadTravelFiveMinuteSlot(slotStart: start, travelPixels: total, durationMinutes: duration)
+            }
+        )
+    }
+
+    func builtinTrackpadScrollByFiveMinuteSlotsTrailing(
+        reference: Date = Date(),
+        count: Int = 12,
+        minutesPerSlot: Int = 5
+    ) -> [BuiltinTrackpadScrollFiveMinuteSlot] {
+        trailingSlotsSinglePass(
+            reference: reference,
+            count: count,
+            minutesPerSlot: minutesPerSlot,
+            buckets: builtinTrackpadScrollBuckets,
+            minuteOf: { $0.minuteStart },
+            valueOf: { $0.scrollPixels },
+            makeSlot: { start, total, duration in
+                BuiltinTrackpadScrollFiveMinuteSlot(slotStart: start, scrollPixels: total, durationMinutes: duration)
+            }
+        )
+    }
+
+    /// One pass over sorted minute buckets (was O(slots × history) and ~100ms+ at 1‑min / 60 bars).
+    private func trailingSlotsSinglePass<Bucket, Slot>(
         reference: Date,
         count: Int,
         minutesPerSlot: Int,
-        makeSlot: (_ slotStart: Date, _ slotEnd: Date, _ duration: Int) -> Slot
+        buckets: [Bucket],
+        minuteOf: (Bucket) -> Date,
+        valueOf: (Bucket) -> Double,
+        makeSlot: (_ slotStart: Date, _ total: Double, _ duration: Int) -> Slot
     ) -> [Slot] {
         let calendar = Calendar.current
         let duration = max(1, minutesPerSlot)
+        let slotCount = max(1, count)
         let currentSlotStart = duration == 5 ? reference.startOfFiveMinuteSlot : reference.startOfMinute
+        guard let windowStart = calendar.date(
+            byAdding: .minute,
+            value: -duration * (slotCount - 1),
+            to: currentSlotStart
+        ),
+            let windowEnd = calendar.date(byAdding: .minute, value: duration, to: currentSlotStart)
+        else { return [] }
+
+        var totals = [Double](repeating: 0, count: slotCount)
+        let slotSeconds = Double(duration * 60)
+        let windowStartTs = windowStart.timeIntervalSince1970
+
+        // Buckets are kept sorted ascending — skip the long history before the window.
+        var i = buckets.firstIndex(where: { minuteOf($0) >= windowStart }) ?? buckets.count
+        while i < buckets.count {
+            let minute = minuteOf(buckets[i])
+            if minute >= windowEnd { break }
+            let offset = minute.timeIntervalSince1970 - windowStartTs
+            let idx = min(slotCount - 1, max(0, Int(offset / slotSeconds)))
+            totals[idx] += valueOf(buckets[i])
+            i += 1
+        }
+
         var slots: [Slot] = []
-        slots.reserveCapacity(count)
-        for i in 0..<count {
-            let minutesBack = duration * (count - 1 - i)
-            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart),
-                  let slotEnd = calendar.date(byAdding: .minute, value: duration, to: slotStart)
+        slots.reserveCapacity(slotCount)
+        for index in 0..<slotCount {
+            let minutesBack = duration * (slotCount - 1 - index)
+            guard let slotStart = calendar.date(byAdding: .minute, value: -minutesBack, to: currentSlotStart)
             else { continue }
-            slots.append(makeSlot(slotStart, slotEnd, duration))
+            slots.append(makeSlot(slotStart, totals[index], duration))
         }
         return slots
     }
@@ -403,30 +1078,48 @@ final class HandTrackStore: ObservableObject {
                   let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart)
             else { continue }
 
-            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
-                return sum + bucket.keyCount
-            }
-            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
-                return sum + bucket.clickCount
-            }
-            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
-                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
-                return sum + bucket.travelPixels
-            }
-            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= hourStart, bucket.minuteStart < hourEnd else { return sum }
-                return sum + bucket.bumpCount
-            }
-
+            let agg = aggregateComputerUsage(from: hourStart, to: hourEnd)
             slots.append(
                 ComputerUsageHourSlot(
                     hourStart: hourStart,
-                    keystrokeCount: keystrokeCount,
-                    mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels,
-                    scrollBumpCount: scrollBumpCount
+                    keystrokeCount: agg.keystrokeCount,
+                    mouseClickCount: agg.mouseClickCount,
+                    travelPixels: agg.travelPixels,
+                    scrollBumpCount: agg.scrollBumpCount,
+                    builtinKeystrokeCount: agg.builtinKeystrokeCount,
+                    builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
+                    builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
+                )
+            )
+        }
+
+        return slots
+    }
+
+    /// All 24 calendar hours of a hand-tracking day (`dayStart` … `dayStart + 1 day`), oldest → newest.
+    func computerUsageHours(forHandTrackingDayStarting dayStart: Date) -> [ComputerUsageHourSlot] {
+        let calendar = Calendar.current
+        var slots: [ComputerUsageHourSlot] = []
+        slots.reserveCapacity(24)
+
+        for hourOffset in 0..<24 {
+            guard let hourStart = calendar.date(byAdding: .hour, value: hourOffset, to: dayStart),
+                  let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hourStart)
+            else { continue }
+
+            let agg = aggregateComputerUsage(from: hourStart, to: hourEnd)
+            slots.append(
+                ComputerUsageHourSlot(
+                    hourStart: hourStart,
+                    keystrokeCount: agg.keystrokeCount,
+                    mouseClickCount: agg.mouseClickCount,
+                    travelPixels: agg.travelPixels,
+                    scrollBumpCount: agg.scrollBumpCount,
+                    builtinKeystrokeCount: agg.builtinKeystrokeCount,
+                    builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
+                    builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
                 )
             )
         }
@@ -448,30 +1141,18 @@ final class HandTrackStore: ObservableObject {
                   let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart)
             else { continue }
 
-            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
-                return sum + bucket.keyCount
-            }
-            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
-                return sum + bucket.clickCount
-            }
-            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
-                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
-                return sum + bucket.travelPixels
-            }
-            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= dayStart, bucket.minuteStart < nextDay else { return sum }
-                return sum + bucket.bumpCount
-            }
-
+            let agg = aggregateComputerUsage(from: dayStart, to: nextDay)
             slots.append(
                 ComputerUsageDaySlot(
                     dayStart: dayStart,
-                    keystrokeCount: keystrokeCount,
-                    mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels,
-                    scrollBumpCount: scrollBumpCount
+                    keystrokeCount: agg.keystrokeCount,
+                    mouseClickCount: agg.mouseClickCount,
+                    travelPixels: agg.travelPixels,
+                    scrollBumpCount: agg.scrollBumpCount,
+                    builtinKeystrokeCount: agg.builtinKeystrokeCount,
+                    builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
+                    builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
                 )
             )
         }
@@ -505,30 +1186,18 @@ final class HandTrackStore: ObservableObject {
                   let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart)
             else { continue }
 
-            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
-                return sum + bucket.keyCount
-            }
-            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
-                return sum + bucket.clickCount
-            }
-            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
-                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
-                return sum + bucket.travelPixels
-            }
-            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= weekStart, bucket.minuteStart < weekEnd else { return sum }
-                return sum + bucket.bumpCount
-            }
-
+            let agg = aggregateComputerUsage(from: weekStart, to: weekEnd)
             slots.append(
                 ComputerUsageWeekSlot(
                     weekStart: weekStart,
-                    keystrokeCount: keystrokeCount,
-                    mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels,
-                    scrollBumpCount: scrollBumpCount
+                    keystrokeCount: agg.keystrokeCount,
+                    mouseClickCount: agg.mouseClickCount,
+                    travelPixels: agg.travelPixels,
+                    scrollBumpCount: agg.scrollBumpCount,
+                    builtinKeystrokeCount: agg.builtinKeystrokeCount,
+                    builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
+                    builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
                 )
             )
         }
@@ -550,35 +1219,63 @@ final class HandTrackStore: ObservableObject {
                   let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart)
             else { continue }
 
-            let keystrokeCount = keystrokeBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
-                return sum + bucket.keyCount
-            }
-            let mouseClickCount = mouseClickBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
-                return sum + bucket.clickCount
-            }
-            let travelPixels = mouseTravelBuckets.reduce(0.0) { sum, bucket in
-                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
-                return sum + bucket.travelPixels
-            }
-            let scrollBumpCount = scrollBumpBuckets.reduce(0) { sum, bucket in
-                guard bucket.minuteStart >= monthStart, bucket.minuteStart < monthEnd else { return sum }
-                return sum + bucket.bumpCount
-            }
-
+            let agg = aggregateComputerUsage(from: monthStart, to: monthEnd)
             slots.append(
                 ComputerUsageMonthSlot(
                     monthStart: monthStart,
-                    keystrokeCount: keystrokeCount,
-                    mouseClickCount: mouseClickCount,
-                    travelPixels: travelPixels,
-                    scrollBumpCount: scrollBumpCount
+                    keystrokeCount: agg.keystrokeCount,
+                    mouseClickCount: agg.mouseClickCount,
+                    travelPixels: agg.travelPixels,
+                    scrollBumpCount: agg.scrollBumpCount,
+                    builtinKeystrokeCount: agg.builtinKeystrokeCount,
+                    builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
+                    builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
                 )
             )
         }
 
         return slots
+    }
+
+    private struct ComputerUsageAggregate {
+        var keystrokeCount = 0
+        var mouseClickCount = 0
+        var travelPixels = 0.0
+        var scrollBumpCount = 0
+        var builtinKeystrokeCount = 0
+        var builtinTrackpadClickCount = 0
+        var builtinTrackpadTravelPixels = 0.0
+        var builtinTrackpadScrollPixels = 0.0
+    }
+
+    private func aggregateComputerUsage(from start: Date, to end: Date) -> ComputerUsageAggregate {
+        var agg = ComputerUsageAggregate()
+        for bucket in keystrokeBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.keystrokeCount += bucket.keyCount
+        }
+        for bucket in mouseClickBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.mouseClickCount += bucket.clickCount
+        }
+        for bucket in mouseTravelBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.travelPixels += bucket.travelPixels
+        }
+        for bucket in scrollBumpBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.scrollBumpCount += bucket.bumpCount
+        }
+        for bucket in builtinKeyboardBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.builtinKeystrokeCount += bucket.keyCount
+        }
+        for bucket in builtinTrackpadClickBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.builtinTrackpadClickCount += bucket.clickCount
+        }
+        for bucket in builtinTrackpadTravelBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.builtinTrackpadTravelPixels += bucket.travelPixels
+        }
+        for bucket in builtinTrackpadScrollBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.builtinTrackpadScrollPixels += bucket.scrollPixels
+        }
+        return agg
     }
 
     func monthlyPainWorstLoggedLeftHand(forOrderedMonthStarts months: [Date]) -> [Double?] {
@@ -867,6 +1564,10 @@ final class HandTrackStore: ObservableObject {
             mouseClickBuckets = try loadMouseClickBuckets()
             mouseTravelBuckets = try loadMouseTravelBuckets()
             scrollBumpBuckets = try loadScrollBumpBuckets()
+            builtinKeyboardBuckets = try loadBuiltinKeyboardBuckets()
+            builtinTrackpadClickBuckets = try loadBuiltinTrackpadClickBuckets()
+            builtinTrackpadTravelBuckets = try loadBuiltinTrackpadTravelBuckets()
+            builtinTrackpadScrollBuckets = try loadBuiltinTrackpadScrollBuckets()
             try rebuildDailyPainRollupsFromHourlyLogs()
         } catch {
             hourlyLogs = []
@@ -874,10 +1575,15 @@ final class HandTrackStore: ObservableObject {
             mouseClickBuckets = []
             mouseTravelBuckets = []
             scrollBumpBuckets = []
+            builtinKeyboardBuckets = []
+            builtinTrackpadClickBuckets = []
+            builtinTrackpadTravelBuckets = []
+            builtinTrackpadScrollBuckets = []
             dailyPainRollups = []
             dailyPainRollupSnapshots = [:]
             print("Failed to load HandTrack data: \(error)")
         }
+        notifyStructuralChange()
     }
 
     private func openDatabaseIfNeeded() throws {
@@ -928,6 +1634,34 @@ final class HandTrackStore: ObservableObject {
         CREATE TABLE IF NOT EXISTS scroll_bump_minute_buckets (
             minute_start REAL PRIMARY KEY,
             bump_count INTEGER NOT NULL
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS builtin_keyboard_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            key_count INTEGER NOT NULL
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS builtin_trackpad_click_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            click_count INTEGER NOT NULL
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS builtin_trackpad_travel_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            travel_pixels REAL NOT NULL
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS builtin_trackpad_scroll_minute_buckets (
+            minute_start REAL PRIMARY KEY,
+            scroll_pixels REAL NOT NULL
         );
         """)
 
@@ -1077,6 +1811,36 @@ final class HandTrackStore: ObservableObject {
             try saveOrThrow(bucket)
         } catch {
             print("Failed to save keystroke bucket: \(error)")
+        }
+    }
+
+    private func deleteKeystrokeBucket(minuteStart: Date) {
+        do {
+            try withStatement("""
+            DELETE FROM keystroke_minute_buckets WHERE minute_start = ?;
+            """) { statement in
+                sqlite3_bind_double(statement, 1, minuteStart.timeIntervalSince1970)
+                if sqlite3_step(statement) != SQLITE_DONE {
+                    throw StoreError.sqlite(message: lastSQLiteError)
+                }
+            }
+        } catch {
+            print("Failed to delete keystroke bucket: \(error)")
+        }
+    }
+
+    private func deleteBuiltinKeyboardBucket(minuteStart: Date) {
+        do {
+            try withStatement("""
+            DELETE FROM builtin_keyboard_minute_buckets WHERE minute_start = ?;
+            """) { statement in
+                sqlite3_bind_double(statement, 1, minuteStart.timeIntervalSince1970)
+                if sqlite3_step(statement) != SQLITE_DONE {
+                    throw StoreError.sqlite(message: lastSQLiteError)
+                }
+            }
+        } catch {
+            print("Failed to delete built-in keyboard bucket: \(error)")
         }
     }
 
@@ -1265,6 +2029,146 @@ final class HandTrackStore: ObservableObject {
             return ScrollBumpMinuteBucket(
                 minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
                 bumpCount: Int(sqlite3_column_int(statement, 1))
+            )
+        }
+    }
+
+    private func saveBuiltinKeyboard(_ bucket: BuiltinKeyboardMinuteBucket) {
+        do {
+            try saveBuiltinKeyboardOrThrow(bucket)
+        } catch {
+            print("Failed to save built-in keyboard bucket: \(error)")
+        }
+    }
+
+    private func saveBuiltinKeyboardOrThrow(_ bucket: BuiltinKeyboardMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO builtin_keyboard_minute_buckets (minute_start, key_count)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 2, Int32(bucket.keyCount))
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
+    private func loadBuiltinKeyboardBuckets() throws -> [BuiltinKeyboardMinuteBucket] {
+        try query("""
+        SELECT minute_start, key_count
+        FROM builtin_keyboard_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return BuiltinKeyboardMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                keyCount: Int(sqlite3_column_int(statement, 1))
+            )
+        }
+    }
+
+    private func saveBuiltinTrackpadClick(_ bucket: BuiltinTrackpadClickMinuteBucket) {
+        do {
+            try saveBuiltinTrackpadClickOrThrow(bucket)
+        } catch {
+            print("Failed to save built-in trackpad click bucket: \(error)")
+        }
+    }
+
+    private func saveBuiltinTrackpadClickOrThrow(_ bucket: BuiltinTrackpadClickMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO builtin_trackpad_click_minute_buckets (minute_start, click_count)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_int(statement, 2, Int32(bucket.clickCount))
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
+    private func loadBuiltinTrackpadClickBuckets() throws -> [BuiltinTrackpadClickMinuteBucket] {
+        try query("""
+        SELECT minute_start, click_count
+        FROM builtin_trackpad_click_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return BuiltinTrackpadClickMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                clickCount: Int(sqlite3_column_int(statement, 1))
+            )
+        }
+    }
+
+    private func saveBuiltinTrackpadTravel(_ bucket: BuiltinTrackpadTravelMinuteBucket) {
+        do {
+            try saveBuiltinTrackpadTravelOrThrow(bucket)
+        } catch {
+            print("Failed to save built-in trackpad travel bucket: \(error)")
+        }
+    }
+
+    private func saveBuiltinTrackpadTravelOrThrow(_ bucket: BuiltinTrackpadTravelMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO builtin_trackpad_travel_minute_buckets (minute_start, travel_pixels)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 2, bucket.travelPixels)
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
+    private func loadBuiltinTrackpadTravelBuckets() throws -> [BuiltinTrackpadTravelMinuteBucket] {
+        try query("""
+        SELECT minute_start, travel_pixels
+        FROM builtin_trackpad_travel_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return BuiltinTrackpadTravelMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                travelPixels: sqlite3_column_double(statement, 1)
+            )
+        }
+    }
+
+    private func saveBuiltinTrackpadScroll(_ bucket: BuiltinTrackpadScrollMinuteBucket) {
+        do {
+            try saveBuiltinTrackpadScrollOrThrow(bucket)
+        } catch {
+            print("Failed to save built-in trackpad scroll bucket: \(error)")
+        }
+    }
+
+    private func saveBuiltinTrackpadScrollOrThrow(_ bucket: BuiltinTrackpadScrollMinuteBucket) throws {
+        try withStatement("""
+        INSERT OR REPLACE INTO builtin_trackpad_scroll_minute_buckets (minute_start, scroll_pixels)
+        VALUES (?, ?);
+        """) { statement in
+            sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 2, bucket.scrollPixels)
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw StoreError.sqlite(message: lastSQLiteError)
+            }
+        }
+    }
+
+    private func loadBuiltinTrackpadScrollBuckets() throws -> [BuiltinTrackpadScrollMinuteBucket] {
+        try query("""
+        SELECT minute_start, scroll_pixels
+        FROM builtin_trackpad_scroll_minute_buckets
+        ORDER BY minute_start ASC;
+        """) { statement in
+            return BuiltinTrackpadScrollMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                scrollPixels: sqlite3_column_double(statement, 1)
             )
         }
     }

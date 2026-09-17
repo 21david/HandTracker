@@ -1,13 +1,13 @@
 import Charts
 import SwiftUI
 
-private enum LiveMouseClickChart {
+private enum LiveBuiltinTrackpadClickChart {
     static let fiveMinuteCap: Double = 120
     static let fiveMinuteExcess: Double = 17
     static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
-struct MacMouseClickFiveMinuteChart: View {
+struct MacBuiltinTrackpadClickFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
     @Environment(HandTrackLivePulse.self) private var livePulse
     @AppStorage(MacLiveUsageBucketResolution.storageKey)
@@ -21,10 +21,10 @@ struct MacMouseClickFiveMinuteChart: View {
     }
 
     var body: some View {
-        let _ = livePulse.mouseClicks
-        let liveRevision = MacChartEquatableBucket.mouseClickRevision(store)
+        let _ = livePulse.builtinTrackpadClicks
+        let liveRevision = MacChartEquatableBucket.builtinTrackpadClickRevision(store)
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            MacMouseClickFiveMinuteChartRender(
+            MacBuiltinTrackpadClickFiveMinuteChartRender(
                 store: store,
                 referenceDate: timeline.date,
                 refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date),
@@ -37,18 +37,18 @@ struct MacMouseClickFiveMinuteChart: View {
     }
 }
 
-private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
+private struct MacBuiltinTrackpadClickFiveMinuteChartRender: View, Equatable {
     let store: HandTrackStore
     let referenceDate: Date
     let refreshBucket: Int
     let liveRevision: Int
     let resolution: MacLiveUsageBucketResolution
 
-    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveMouseClickChart.fiveMinuteCap) }
-    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveMouseClickChart.fiveMinuteExcess) }
+    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveBuiltinTrackpadClickChart.fiveMinuteCap) }
+    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveBuiltinTrackpadClickChart.fiveMinuteExcess) }
 
     var body: some View {
-        let slots = store.mouseClicksByFiveMinuteSlotsTrailing(
+        let slots = store.builtinTrackpadClicksByFiveMinuteSlotsTrailing(
             reference: referenceDate,
             count: resolution.barCount,
             minutesPerSlot: resolution.minutesPerBar
@@ -57,7 +57,7 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
 
         Chart {
             RuleMark(y: .value("Baseline", 0.0))
-                .foregroundStyle(LiveMouseClickChart.axisLineColor)
+                .foregroundStyle(LiveBuiltinTrackpadClickChart.axisLineColor)
                 .lineStyle(StrokeStyle(lineWidth: 1))
             ForEach(Array(slots.enumerated().compactMap { index, slot -> Plotted? in
                 guard slot.clickCount > 0 else { return nil }
@@ -96,13 +96,13 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
             let labelEvery = resolution == .oneMinute ? 10 : 1
             AxisMarks(preset: .aligned, values: boundaries) { value in
                 AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
-                    .foregroundStyle(LiveMouseClickChart.axisLineColor)
+                    .foregroundStyle(LiveBuiltinTrackpadClickChart.axisLineColor)
                 if let idx = value.as(Int.self),
                    (idx % labelEvery == 0 || idx == slots.count),
                    let date = tickDate(idx: idx, slots: slots)
                 {
                     AxisValueLabel(centered: false) {
-                        Text(axisLabelFormatter.string(from: date))
+                        Text(Self.axisLabelFormatter.string(from: date))
                             .font(.caption2)
                             .foregroundStyle(.primary)
                     }
@@ -111,7 +111,7 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
         }
         .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral() }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Clicks", deviceNote: "external mouse")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Clicks", deviceNote: "macbook trackpad")
         }
         .frame(height: 200)
         .padding(.top, 20)
@@ -129,13 +129,12 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
         var id: Int { index }
     }
 
-    private func tickDate(idx: Int, slots: [MouseClickFiveMinuteSlot]) -> Date? {
+    private func tickDate(idx: Int, slots: [BuiltinTrackpadClickFiveMinuteSlot]) -> Date? {
         if idx >= 0 && idx < slots.count { return slots[idx].slotStart }
         if idx == slots.count, let last = slots.last { return last.slotEnd }
         return nil
     }
 
-    private var axisLabelFormatter: DateFormatter { Self.axisLabelFormatter }
     private static let axisLabelFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mma"

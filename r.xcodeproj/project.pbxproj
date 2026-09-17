@@ -3,10 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0303BB2D355CF61E53E22985 /* MacPlotHTMLWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7BC04AB9273A2FBF4F447C9 /* MacPlotHTMLWebView.swift */; };
+		0A29101971421D23A13E9E4F /* MacDashboardScrollGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5AB58E9FA3A8AF21B4019F2 /* MacDashboardScrollGate.swift */; };
+		12017F8EEBAEDC00397448DE /* MacBuiltinKeyboardFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E025F825256962950A81F69B /* MacBuiltinKeyboardFiveMinuteChart.swift */; };
 		174560B57CF11EE378B5FC71 /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40912172EF84CBAB85AFB9A7 /* HandTrackSyncClient.swift */; };
 		178194936FFEE4798F4BC039 /* MacScrollBumpFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761ACE93D4E511AD30528AE2 /* MacScrollBumpFiveMinuteChart.swift */; };
 		17A761F821F37D77DBAAE889 /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5EF1645EA336F4898E2D73 /* HandTrackSyncServer.swift */; };
@@ -15,8 +18,12 @@
 		1DBFC082342AAE42B9182141 /* MacMouseClickFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569265D4EAC1024110493FF6 /* MacMouseClickFiveMinuteChart.swift */; };
 		1E9B20742AEA5F62ADD19EAF /* MacTwelveMonthStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B3BA82708D0D9415A68215 /* MacTwelveMonthStackedUsagePainChart.swift */; };
 		23D6B2F2EA197ABFFCFC99C3 /* HandTrackMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 202634762CC99A2CB542EF35 /* HandTrackMacApp.swift */; };
+		259B8FD60712218219EACE53 /* MacGraphsDebugModePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C847C20B412C32495622F5D9 /* MacGraphsDebugModePanel.swift */; };
+		260C668719283D436DB12EE0 /* MacBuiltinTrackpadScrollFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFFF85DAC8C40870CAB463B /* MacBuiltinTrackpadScrollFiveMinuteChart.swift */; };
+		2E5A05829FFCC9B27B67523B /* MacDayHourlyUsageDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A45AE0EE4D51075B5EF85A7B /* MacDayHourlyUsageDetailView.swift */; };
 		30B8753C4477A7632B3D29AA /* HandTrackSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40912172EF84CBAB85AFB9A7 /* HandTrackSyncClient.swift */; };
 		31218BC7281F5BC7F77E32D2 /* MacTwelveDayStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35E207A29B3A0ABBABD478B /* MacTwelveDayStackedUsagePainChart.swift */; };
+		38003A6080C5226D80177599 /* HandTrackLivePulse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */; };
 		4CF9F94D704543ACC93C359F /* MacMouseTravelFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5F4004319A170CF59F4B9D /* MacMouseTravelFiveMinuteChart.swift */; };
 		4DCF246E2AA25C0EFBF8E13D /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C2781108EDDF110EBCCE2BB6 /* libsqlite3.tbd */; };
 		519FE5E9A667598DF1131B0A /* HandTrackSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5EF1645EA336F4898E2D73 /* HandTrackSyncServer.swift */; };
@@ -25,15 +32,22 @@
 		576AE648CBC49AA878BA3906 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C2781108EDDF110EBCCE2BB6 /* libsqlite3.tbd */; };
 		5E231E779D7F0FE7EF9BAA3A /* MacActivityLimitsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BC214C27D4B7422EAC88819 /* MacActivityLimitsPopover.swift */; };
 		6038D544231EB6C4CBCBA64F /* MacActivityLimitController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77A0603B6A83A1637BA2A7B8 /* MacActivityLimitController.swift */; };
+		613EBA89E87112F42C92B696 /* MacKarabinerBuiltinKeyboardRelease.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D4B027164D210A8C2B8CA8 /* MacKarabinerBuiltinKeyboardRelease.swift */; };
 		68F5920E73FFA028F55945C0 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0264492DAF552E48E04958C8 /* MacContentView.swift */; };
 		6D1B7127809C56A5C4B08EC5 /* MacDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E47B6232BBFA6B28AC8532DF /* MacDashboardViewModel.swift */; };
 		70A6E8B2D3EC7A47C7B91C10 /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210FC7EE20FD002266614326 /* HandTrackModels.swift */; };
 		70B1542B88D8119E0AE4F2AF /* MacTwelveWeekStackedUsagePainChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DBF8A4A517DC716B122A7D /* MacTwelveWeekStackedUsagePainChart.swift */; };
 		771D4F2C15DFD4F16D79970A /* HandTrackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210FC7EE20FD002266614326 /* HandTrackModels.swift */; };
+		7F7DAB789B6B6E1EB9991F3F /* MacBuiltinTrackpadTravelFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6780F387AA597B5AB4D06511 /* MacBuiltinTrackpadTravelFiveMinuteChart.swift */; };
+		8134B2A44F485E969B75A48A /* plot_metric_histogram.py in Resources */ = {isa = PBXBuildFile; fileRef = 028B8F68424B3078CC95C053 /* plot_metric_histogram.py */; };
+		858D4A3438A73893087D48B7 /* MacBuiltinTrackpadClickFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFB5204CFF1FAC1D7254D9BD /* MacBuiltinTrackpadClickFiveMinuteChart.swift */; };
 		8627EABD9D48737E85AA4030 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79D1EDDB2E9FE5F6ADF77E1D /* Assets.xcassets */; };
 		883FF426E00CB425F5E9A410 /* MacLiveUsageBucketResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADD26EB622BE103632EA4E9 /* MacLiveUsageBucketResolution.swift */; };
+		8A8B5BE592842B541B7C3D97 /* HandTrackLivePulse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */; };
 		9219C116395E5AC15AE16D4E /* MacMutePauseControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 234C3348DD15D675777BB7E2 /* MacMutePauseControls.swift */; };
+		94975FEC01CE080DAA04D304 /* MacAgentDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */; };
 		9ADAD15CF5A1F83C733FC4F8 /* MacActivityBreakBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643AEF8B074D5151DFD602F7 /* MacActivityBreakBanner.swift */; };
+		A5CC8E65D1BBF91DB46787C5 /* MacUnhandledKeystrokeBeepProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5606B27CFACB6ED9E1E4D325 /* MacUnhandledKeystrokeBeepProbe.swift */; };
 		AB335DDE2A462292E99FB853 /* MacKeystrokeFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97290D31647114C2F1E22475 /* MacKeystrokeFiveMinuteChart.swift */; };
 		AB59145DD17F3661678434BC /* HourlyReminderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CA108BD13DEECDC0431A8C /* HourlyReminderManager.swift */; };
 		ACD435F02FEABA0B91B18B56 /* MacFiveMinuteBarStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 016AACB9CA488A3DB496E1BA /* MacFiveMinuteBarStyle.swift */; };
@@ -44,26 +58,34 @@
 		D2BD02556BD7401E4F084E73 /* MacChartScrollPerformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96D0CD705800522B194D989 /* MacChartScrollPerformance.swift */; };
 		DCA15EEDF5C8E271ADB64FF6 /* MacUsageDashboardSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E764FA9C882E3973ACA2D63 /* MacUsageDashboardSummary.swift */; };
 		DFB3D95C397262C6823D8578 /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AF6EC324DF66004B22FEAA1 /* HandTrackStore.swift */; };
+		E067D6E952D154F5F6ED6865 /* MacHistoricalPlotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADCBC1F236A695C63AB0836 /* MacHistoricalPlotsView.swift */; };
 		E5851106A694C1A2A11C204D /* HandTrackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AF6EC324DF66004B22FEAA1 /* HandTrackStore.swift */; };
+		FF3FE88A21A644BC39F78C43 /* MacHistoricalPlotRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E7382A7F28244C89A3A4FE7 /* MacHistoricalPlotRenderer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		016AACB9CA488A3DB496E1BA /* MacFiveMinuteBarStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFiveMinuteBarStyle.swift; sourceTree = "<group>"; };
 		0264492DAF552E48E04958C8 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
+		028B8F68424B3078CC95C053 /* plot_metric_histogram.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = plot_metric_histogram.py; sourceTree = "<group>"; };
 		0D68D310C09428069A5925D5 /* HandTrackRecordingAlarmConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackRecordingAlarmConfig.swift; sourceTree = "<group>"; };
 		202634762CC99A2CB542EF35 /* HandTrackMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackMacApp.swift; sourceTree = "<group>"; };
 		210FC7EE20FD002266614326 /* HandTrackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackModels.swift; sourceTree = "<group>"; };
 		234C3348DD15D675777BB7E2 /* MacMutePauseControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMutePauseControls.swift; sourceTree = "<group>"; };
 		2D5EF1645EA336F4898E2D73 /* HandTrackSyncServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncServer.swift; sourceTree = "<group>"; };
+		363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackLivePulse.swift; sourceTree = "<group>"; };
 		38DBF8A4A517DC716B122A7D /* MacTwelveWeekStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveWeekStackedUsagePainChart.swift; sourceTree = "<group>"; };
+		3ADCBC1F236A695C63AB0836 /* MacHistoricalPlotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHistoricalPlotsView.swift; sourceTree = "<group>"; };
 		40912172EF84CBAB85AFB9A7 /* HandTrackSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncClient.swift; sourceTree = "<group>"; };
 		548B65CAB65A952D3F79FA4A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5606B27CFACB6ED9E1E4D325 /* MacUnhandledKeystrokeBeepProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUnhandledKeystrokeBeepProbe.swift; sourceTree = "<group>"; };
 		569265D4EAC1024110493FF6 /* MacMouseClickFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseClickFiveMinuteChart.swift; sourceTree = "<group>"; };
 		5CBD9CC598A3A5FBBC28779A /* HandTrackiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackiOSApp.swift; sourceTree = "<group>"; };
 		5E764FA9C882E3973ACA2D63 /* MacUsageDashboardSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUsageDashboardSummary.swift; sourceTree = "<group>"; };
 		643AEF8B074D5151DFD602F7 /* MacActivityBreakBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacActivityBreakBanner.swift; sourceTree = "<group>"; };
+		6780F387AA597B5AB4D06511 /* MacBuiltinTrackpadTravelFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinTrackpadTravelFiveMinuteChart.swift; sourceTree = "<group>"; };
 		6A5F4004319A170CF59F4B9D /* MacMouseTravelFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMouseTravelFiveMinuteChart.swift; sourceTree = "<group>"; };
 		6BB15E07455966EE76679EC5 /* KeystrokeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeMonitor.swift; sourceTree = "<group>"; };
+		6E7382A7F28244C89A3A4FE7 /* MacHistoricalPlotRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHistoricalPlotRenderer.swift; sourceTree = "<group>"; };
 		71E10430186DA1BA531C37E6 /* MacEstimatedWorkloadMinutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEstimatedWorkloadMinutes.swift; sourceTree = "<group>"; };
 		75CA108BD13DEECDC0431A8C /* HourlyReminderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HourlyReminderManager.swift; sourceTree = "<group>"; };
 		761ACE93D4E511AD30528AE2 /* MacScrollBumpFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScrollBumpFiveMinuteChart.swift; sourceTree = "<group>"; };
@@ -75,10 +97,19 @@
 		8FD9EB9F906DB8AB148B9288 /* MacTwelveHourStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveHourStackedUsagePainChart.swift; sourceTree = "<group>"; };
 		97290D31647114C2F1E22475 /* MacKeystrokeFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKeystrokeFiveMinuteChart.swift; sourceTree = "<group>"; };
 		9BC214C27D4B7422EAC88819 /* MacActivityLimitsPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacActivityLimitsPopover.swift; sourceTree = "<group>"; };
+		9DFFF85DAC8C40870CAB463B /* MacBuiltinTrackpadScrollFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinTrackpadScrollFiveMinuteChart.swift; sourceTree = "<group>"; };
+		A45AE0EE4D51075B5EF85A7B /* MacDayHourlyUsageDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDayHourlyUsageDetailView.swift; sourceTree = "<group>"; };
+		A7D4B027164D210A8C2B8CA8 /* MacKarabinerBuiltinKeyboardRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKarabinerBuiltinKeyboardRelease.swift; sourceTree = "<group>"; };
+		B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentDebugLog.swift; sourceTree = "<group>"; };
+		B7BC04AB9273A2FBF4F447C9 /* MacPlotHTMLWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPlotHTMLWebView.swift; sourceTree = "<group>"; };
+		BFB5204CFF1FAC1D7254D9BD /* MacBuiltinTrackpadClickFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinTrackpadClickFiveMinuteChart.swift; sourceTree = "<group>"; };
 		C2781108EDDF110EBCCE2BB6 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
-		C993793EFEC2290D4EA10C0D /* HandTrackiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C5AB58E9FA3A8AF21B4019F2 /* MacDashboardScrollGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardScrollGate.swift; sourceTree = "<group>"; };
+		C847C20B412C32495622F5D9 /* MacGraphsDebugModePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGraphsDebugModePanel.swift; sourceTree = "<group>"; };
+		C993793EFEC2290D4EA10C0D /* HandTrackiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D498B412AB2B2C0CC0DB1CF4 /* iOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSContentView.swift; sourceTree = "<group>"; };
 		DC7FC7DE6A5E3B5677CFBDF4 /* MacUsageBarBreakdownContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUsageBarBreakdownContextMenu.swift; sourceTree = "<group>"; };
+		E025F825256962950A81F69B /* MacBuiltinKeyboardFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinKeyboardFiveMinuteChart.swift; sourceTree = "<group>"; };
 		E47B6232BBFA6B28AC8532DF /* MacDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardViewModel.swift; sourceTree = "<group>"; };
 		E5283E175ECAE0BC8ED010AB /* HandTrackMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F35E207A29B3A0ABBABD478B /* MacTwelveDayStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveDayStackedUsagePainChart.swift; sourceTree = "<group>"; };
@@ -118,6 +149,7 @@
 			isa = PBXGroup;
 			children = (
 				79D1EDDB2E9FE5F6ADF77E1D /* Assets.xcassets */,
+				028B8F68424B3078CC95C053 /* plot_metric_histogram.py */,
 			);
 			name = Resources;
 			path = Apps/macOS/Resources;
@@ -171,6 +203,7 @@
 			isa = PBXGroup;
 			children = (
 				6BB15E07455966EE76679EC5 /* KeystrokeMonitor.swift */,
+				A7D4B027164D210A8C2B8CA8 /* MacKarabinerBuiltinKeyboardRelease.swift */,
 			);
 			name = Sources;
 			path = Packages/HandTrackMacInput/Sources;
@@ -203,21 +236,33 @@
 				643AEF8B074D5151DFD602F7 /* MacActivityBreakBanner.swift */,
 				77A0603B6A83A1637BA2A7B8 /* MacActivityLimitController.swift */,
 				9BC214C27D4B7422EAC88819 /* MacActivityLimitsPopover.swift */,
+				B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */,
+				E025F825256962950A81F69B /* MacBuiltinKeyboardFiveMinuteChart.swift */,
+				BFB5204CFF1FAC1D7254D9BD /* MacBuiltinTrackpadClickFiveMinuteChart.swift */,
+				9DFFF85DAC8C40870CAB463B /* MacBuiltinTrackpadScrollFiveMinuteChart.swift */,
+				6780F387AA597B5AB4D06511 /* MacBuiltinTrackpadTravelFiveMinuteChart.swift */,
 				F96D0CD705800522B194D989 /* MacChartScrollPerformance.swift */,
 				0264492DAF552E48E04958C8 /* MacContentView.swift */,
+				C5AB58E9FA3A8AF21B4019F2 /* MacDashboardScrollGate.swift */,
 				E47B6232BBFA6B28AC8532DF /* MacDashboardViewModel.swift */,
+				A45AE0EE4D51075B5EF85A7B /* MacDayHourlyUsageDetailView.swift */,
 				71E10430186DA1BA531C37E6 /* MacEstimatedWorkloadMinutes.swift */,
 				016AACB9CA488A3DB496E1BA /* MacFiveMinuteBarStyle.swift */,
+				C847C20B412C32495622F5D9 /* MacGraphsDebugModePanel.swift */,
+				6E7382A7F28244C89A3A4FE7 /* MacHistoricalPlotRenderer.swift */,
+				3ADCBC1F236A695C63AB0836 /* MacHistoricalPlotsView.swift */,
 				97290D31647114C2F1E22475 /* MacKeystrokeFiveMinuteChart.swift */,
 				7ADD26EB622BE103632EA4E9 /* MacLiveUsageBucketResolution.swift */,
 				569265D4EAC1024110493FF6 /* MacMouseClickFiveMinuteChart.swift */,
 				6A5F4004319A170CF59F4B9D /* MacMouseTravelFiveMinuteChart.swift */,
 				234C3348DD15D675777BB7E2 /* MacMutePauseControls.swift */,
+				B7BC04AB9273A2FBF4F447C9 /* MacPlotHTMLWebView.swift */,
 				761ACE93D4E511AD30528AE2 /* MacScrollBumpFiveMinuteChart.swift */,
 				F35E207A29B3A0ABBABD478B /* MacTwelveDayStackedUsagePainChart.swift */,
 				8FD9EB9F906DB8AB148B9288 /* MacTwelveHourStackedUsagePainChart.swift */,
 				81B3BA82708D0D9415A68215 /* MacTwelveMonthStackedUsagePainChart.swift */,
 				38DBF8A4A517DC716B122A7D /* MacTwelveWeekStackedUsagePainChart.swift */,
+				5606B27CFACB6ED9E1E4D325 /* MacUnhandledKeystrokeBeepProbe.swift */,
 				DC7FC7DE6A5E3B5677CFBDF4 /* MacUsageBarBreakdownContextMenu.swift */,
 				5E764FA9C882E3973ACA2D63 /* MacUsageDashboardSummary.swift */,
 			);
@@ -228,6 +273,7 @@
 		F987F15EF3567B6D0C5AE38C /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */,
 				8AF6EC324DF66004B22FEAA1 /* HandTrackStore.swift */,
 			);
 			name = Sources;
@@ -289,7 +335,6 @@
 						ProvisioningStyle = Manual;
 					};
 					A467F42477BE834FE6393981 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -304,7 +349,6 @@
 			);
 			mainGroup = 5A0E54313FF2E74CA33D883D;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -328,6 +372,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8627EABD9D48737E85AA4030 /* Assets.xcassets in Resources */,
+				8134B2A44F485E969B75A48A /* plot_metric_histogram.py in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,6 +383,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A8B5BE592842B541B7C3D97 /* HandTrackLivePulse.swift in Sources */,
 				23D6B2F2EA197ABFFCFC99C3 /* HandTrackMacApp.swift in Sources */,
 				70A6E8B2D3EC7A47C7B91C10 /* HandTrackModels.swift in Sources */,
 				C997C9705014E5702DD8699E /* HandTrackRecordingAlarmConfig.swift in Sources */,
@@ -348,21 +394,34 @@
 				9ADAD15CF5A1F83C733FC4F8 /* MacActivityBreakBanner.swift in Sources */,
 				6038D544231EB6C4CBCBA64F /* MacActivityLimitController.swift in Sources */,
 				5E231E779D7F0FE7EF9BAA3A /* MacActivityLimitsPopover.swift in Sources */,
+				94975FEC01CE080DAA04D304 /* MacAgentDebugLog.swift in Sources */,
+				12017F8EEBAEDC00397448DE /* MacBuiltinKeyboardFiveMinuteChart.swift in Sources */,
+				858D4A3438A73893087D48B7 /* MacBuiltinTrackpadClickFiveMinuteChart.swift in Sources */,
+				260C668719283D436DB12EE0 /* MacBuiltinTrackpadScrollFiveMinuteChart.swift in Sources */,
+				7F7DAB789B6B6E1EB9991F3F /* MacBuiltinTrackpadTravelFiveMinuteChart.swift in Sources */,
 				D2BD02556BD7401E4F084E73 /* MacChartScrollPerformance.swift in Sources */,
 				68F5920E73FFA028F55945C0 /* MacContentView.swift in Sources */,
+				0A29101971421D23A13E9E4F /* MacDashboardScrollGate.swift in Sources */,
 				6D1B7127809C56A5C4B08EC5 /* MacDashboardViewModel.swift in Sources */,
+				2E5A05829FFCC9B27B67523B /* MacDayHourlyUsageDetailView.swift in Sources */,
 				D2B08AE6F78B9A135E4B9075 /* MacEstimatedWorkloadMinutes.swift in Sources */,
 				ACD435F02FEABA0B91B18B56 /* MacFiveMinuteBarStyle.swift in Sources */,
+				259B8FD60712218219EACE53 /* MacGraphsDebugModePanel.swift in Sources */,
+				FF3FE88A21A644BC39F78C43 /* MacHistoricalPlotRenderer.swift in Sources */,
+				E067D6E952D154F5F6ED6865 /* MacHistoricalPlotsView.swift in Sources */,
+				613EBA89E87112F42C92B696 /* MacKarabinerBuiltinKeyboardRelease.swift in Sources */,
 				AB335DDE2A462292E99FB853 /* MacKeystrokeFiveMinuteChart.swift in Sources */,
 				883FF426E00CB425F5E9A410 /* MacLiveUsageBucketResolution.swift in Sources */,
 				1DBFC082342AAE42B9182141 /* MacMouseClickFiveMinuteChart.swift in Sources */,
 				4CF9F94D704543ACC93C359F /* MacMouseTravelFiveMinuteChart.swift in Sources */,
 				9219C116395E5AC15AE16D4E /* MacMutePauseControls.swift in Sources */,
+				0303BB2D355CF61E53E22985 /* MacPlotHTMLWebView.swift in Sources */,
 				178194936FFEE4798F4BC039 /* MacScrollBumpFiveMinuteChart.swift in Sources */,
 				31218BC7281F5BC7F77E32D2 /* MacTwelveDayStackedUsagePainChart.swift in Sources */,
 				1BFF78709377383387E0C862 /* MacTwelveHourStackedUsagePainChart.swift in Sources */,
 				1E9B20742AEA5F62ADD19EAF /* MacTwelveMonthStackedUsagePainChart.swift in Sources */,
 				70B1542B88D8119E0AE4F2AF /* MacTwelveWeekStackedUsagePainChart.swift in Sources */,
+				A5CC8E65D1BBF91DB46787C5 /* MacUnhandledKeystrokeBeepProbe.swift in Sources */,
 				191A529B13670FF02633E64B /* MacUsageBarBreakdownContextMenu.swift in Sources */,
 				DCA15EEDF5C8E271ADB64FF6 /* MacUsageDashboardSummary.swift in Sources */,
 			);
@@ -372,6 +431,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				38003A6080C5226D80177599 /* HandTrackLivePulse.swift in Sources */,
 				771D4F2C15DFD4F16D79970A /* HandTrackModels.swift in Sources */,
 				DFB3D95C397262C6823D8578 /* HandTrackStore.swift in Sources */,
 				174560B57CF11EE378B5FC71 /* HandTrackSyncClient.swift in Sources */,
@@ -390,6 +450,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -423,6 +484,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

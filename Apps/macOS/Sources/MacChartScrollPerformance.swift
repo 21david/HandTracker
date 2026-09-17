@@ -50,6 +50,42 @@ enum MacChartEquatableBucket {
         )
     }
 
+    @MainActor
+    static func builtinKeyboardRevision(_ store: HandTrackStore) -> Int {
+        metricRevision(
+            bucketCount: store.builtinKeyboardBuckets.count,
+            minuteStart: store.builtinKeyboardBuckets.last?.minuteStart,
+            value: Double(store.builtinKeyboardBuckets.last?.keyCount ?? 0)
+        )
+    }
+
+    @MainActor
+    static func builtinTrackpadClickRevision(_ store: HandTrackStore) -> Int {
+        metricRevision(
+            bucketCount: store.builtinTrackpadClickBuckets.count,
+            minuteStart: store.builtinTrackpadClickBuckets.last?.minuteStart,
+            value: Double(store.builtinTrackpadClickBuckets.last?.clickCount ?? 0)
+        )
+    }
+
+    @MainActor
+    static func builtinTrackpadTravelRevision(_ store: HandTrackStore) -> Int {
+        metricRevision(
+            bucketCount: store.builtinTrackpadTravelBuckets.count,
+            minuteStart: store.builtinTrackpadTravelBuckets.last?.minuteStart,
+            value: store.builtinTrackpadTravelBuckets.last?.travelPixels ?? 0
+        )
+    }
+
+    @MainActor
+    static func builtinTrackpadScrollRevision(_ store: HandTrackStore) -> Int {
+        metricRevision(
+            bucketCount: store.builtinTrackpadScrollBuckets.count,
+            minuteStart: store.builtinTrackpadScrollBuckets.last?.minuteStart,
+            value: store.builtinTrackpadScrollBuckets.last?.scrollPixels ?? 0
+        )
+    }
+
     private static func metricRevision(bucketCount: Int, minuteStart: Date?, value: Double) -> Int {
         var hasher = Hasher()
         hasher.combine(bucketCount)

@@ -9,6 +9,7 @@ private enum LiveMouseTravelChart {
 
 struct MacMouseTravelFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
+    @Environment(HandTrackLivePulse.self) private var livePulse
     @AppStorage(MacLiveUsageBucketResolution.storageKey)
     private var resolutionRaw = MacLiveUsageBucketResolution.fiveMinutes.rawValue
 
@@ -20,8 +21,9 @@ struct MacMouseTravelFiveMinuteChart: View {
     }
 
     var body: some View {
+        let _ = livePulse.mouseTravel
         let liveRevision = MacChartEquatableBucket.mouseTravelRevision(store)
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
             MacMouseTravelFiveMinuteChartRender(
                 store: store,
                 referenceDate: timeline.date,
@@ -30,7 +32,7 @@ struct MacMouseTravelFiveMinuteChart: View {
                 resolution: resolution.wrappedValue
             )
             .equatable()
-            .id(liveRevision)
+
         }
     }
 }
@@ -109,7 +111,7 @@ private struct MacMouseTravelFiveMinuteChartRender: View, Equatable {
         }
         .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridPixelThousands() }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Pointer travel")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Pointer travel", deviceNote: "external mouse")
         }
         .frame(height: 200)
         .padding(.top, 20)

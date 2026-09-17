@@ -9,6 +9,7 @@ private enum LiveScrollBumpChart {
 
 struct MacScrollBumpFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
+    @Environment(HandTrackLivePulse.self) private var livePulse
     @AppStorage(MacLiveUsageBucketResolution.storageKey)
     private var resolutionRaw = MacLiveUsageBucketResolution.fiveMinutes.rawValue
 
@@ -20,8 +21,9 @@ struct MacScrollBumpFiveMinuteChart: View {
     }
 
     var body: some View {
+        let _ = livePulse.scrollBumps
         let liveRevision = MacChartEquatableBucket.scrollBumpRevision(store)
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
             MacScrollBumpFiveMinuteChartRender(
                 store: store,
                 referenceDate: timeline.date,
@@ -30,7 +32,7 @@ struct MacScrollBumpFiveMinuteChart: View {
                 resolution: resolution.wrappedValue
             )
             .equatable()
-            .id(liveRevision)
+
         }
     }
 }
@@ -109,7 +111,7 @@ private struct MacScrollBumpFiveMinuteChartRender: View, Equatable {
         }
         .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral() }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Scrolls")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Scrolls", deviceNote: "external mouse")
         }
         .frame(height: 200)
         .padding(.top, 20)

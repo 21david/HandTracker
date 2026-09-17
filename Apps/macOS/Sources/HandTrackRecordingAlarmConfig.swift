@@ -138,6 +138,49 @@ struct HandTrackActivityLimitsSnapshot {
             travel: travel
         )
     }
+
+    /// Persists the editable Activity Limits fields. Sound settings are left unchanged unless
+    /// the caller mutated them on this snapshot.
+    func saveToUserDefaults() {
+        let d = UserDefaults.standard
+        d.set(masterEnabled, forKey: HandTrackActivityLimitsStorage.masterEnabledKey)
+        d.set(soundName, forKey: HandTrackActivityLimitsStorage.soundNameKey)
+        d.set(soundVolumePercent, forKey: HandTrackActivityLimitsStorage.soundVolumeKey)
+
+        func saveActivity(_ activity: PerActivity, enabledKey: String, thresholdKey: String,
+                          windowKey: String, breakKey: String, extensionKey: String) {
+            d.set(activity.enabled, forKey: enabledKey)
+            d.set(Int(activity.threshold.rounded()), forKey: thresholdKey)
+            d.set(activity.windowMinutes, forKey: windowKey)
+            d.set(activity.breakMinutes, forKey: breakKey)
+            d.set(activity.extensionSeconds, forKey: extensionKey)
+        }
+
+        saveActivity(
+            keys,
+            enabledKey: HandTrackActivityLimitsStorage.keysEnabledKey,
+            thresholdKey: HandTrackActivityLimitsStorage.keysThresholdKey,
+            windowKey: HandTrackActivityLimitsStorage.keysWindowMinutesKey,
+            breakKey: HandTrackActivityLimitsStorage.keysBreakMinutesKey,
+            extensionKey: HandTrackActivityLimitsStorage.keysExtensionSecondsKey
+        )
+        saveActivity(
+            clicks,
+            enabledKey: HandTrackActivityLimitsStorage.clicksEnabledKey,
+            thresholdKey: HandTrackActivityLimitsStorage.clicksThresholdKey,
+            windowKey: HandTrackActivityLimitsStorage.clicksWindowMinutesKey,
+            breakKey: HandTrackActivityLimitsStorage.clicksBreakMinutesKey,
+            extensionKey: HandTrackActivityLimitsStorage.clicksExtensionSecondsKey
+        )
+        saveActivity(
+            travel,
+            enabledKey: HandTrackActivityLimitsStorage.travelEnabledKey,
+            thresholdKey: HandTrackActivityLimitsStorage.travelThresholdKey,
+            windowKey: HandTrackActivityLimitsStorage.travelWindowMinutesKey,
+            breakKey: HandTrackActivityLimitsStorage.travelBreakMinutesKey,
+            extensionKey: HandTrackActivityLimitsStorage.travelExtensionSecondsKey
+        )
+    }
 }
 
 enum HandTrackActivityKind: String, CaseIterable, Identifiable, Hashable {

@@ -56,3 +56,36 @@ struct MacLiveUsageBucketResolutionPicker: View {
         .help("Bar width: always one hour of history")
     }
 }
+
+/// Which live five‑minute chart family is shown on the dashboard.
+enum MacLiveGraphDeviceSource: String, CaseIterable, Identifiable {
+    case external
+    case macbook
+
+    var id: String { rawValue }
+
+    static let storageKey = "HandTrack.mac.liveGraphDeviceSource"
+
+    var shortLabel: String {
+        switch self {
+        case .external: return "External"
+        case .macbook: return "MacBook"
+        }
+    }
+}
+
+struct MacLiveGraphDeviceSourcePicker: View {
+    @Binding var source: MacLiveGraphDeviceSource
+
+    var body: some View {
+        Picker("Device", selection: $source) {
+            ForEach(MacLiveGraphDeviceSource.allCases) { mode in
+                Text(mode.shortLabel).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 180)
+        .labelsHidden()
+        .help("Show external mouse/keyboard charts or MacBook built‑in charts")
+    }
+}

@@ -21,7 +21,9 @@ struct ActiveActivityBreak: Identifiable, Equatable {
 /// the timer when wall-clock time has caught up to `expiresAt`.
 @MainActor
 final class MacActivityLimitController: ObservableObject {
-    @Published private(set) var activeBreaks: [HandTrackActivityKind: ActiveActivityBreak] = [:]
+    /// Not `@Published`: extending a break on every keystroke must not rebuild the dashboard.
+    /// UI is notified only when breaks start/end via ``publishBreaksStructureChanged()``.
+    private(set) var activeBreaks: [HandTrackActivityKind: ActiveActivityBreak] = [:]
 
     private struct IgnoredActivityEvent {
         let kind: HandTrackActivityKind
@@ -32,23 +34,30 @@ final class MacActivityLimitController: ObservableObject {
     private weak var store: HandTrackStore?
     private var tickTimer: Timer?
     private var ignoredEvents: [IgnoredActivityEvent] = []
+    /// Avoid UserDefaults + decode on every keystroke; refresh only on attach / settings Done.
+    private var cachedSnapshot: HandTrackActivityLimitsSnapshot?
 
     func attach(store: HandTrackStore) {
         self.store = store
+        cachedSnapshot = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
         startTickTimer()
     }
 
     func detach() {
         tickTimer?.invalidate()
         tickTimer = nil
+        let hadBreaks = !activeBreaks.isEmpty
         activeBreaks.removeAll()
         ignoredEvents.removeAll()
+        cachedSnapshot = nil
+        if hadBreaks { publishBreaksStructureChanged() }
     }
 
     /// Forces a snapshot reload + recomputes remaining timers — call after the settings popover
     /// changes values so the UI reflects new threshold/break durations immediately.
     func refreshAfterSettingsChange() {
         let snapshot = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
+        cachedSnapshot = snapshot
         for (kind, var brk) in activeBreaks {
             let perActivity = perActivity(in: snapshot, for: kind)
             brk.extensionSecondsPerEvent = perActivity.extensionSeconds
@@ -68,15 +77,26 @@ final class MacActivityLimitController: ObservableObject {
         at now: Date = Date(),
         playSound: Bool = true
     ) {
-        let snapshot = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
+        let snapshot = cachedSnapshot ?? HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
+        if cachedSnapshot == nil { cachedSnapshot = snapshot }
         guard snapshot.masterEnabled else { return }
         let activity = perActivity(in: snapshot, for: kind)
         guard activity.enabled else { return }
         pruneIgnoredEvents(before: now.addingTimeInterval(-Double(maximumWindowMinutes(in: snapshot)) * 60))
 
         if var existing = activeBreaks[kind] {
-            existing.expiresAt = existing.expiresAt.addingTimeInterval(Double(existing.extensionSecondsPerEvent))
+            // Keys/clicks may arrive batched; travel batches already represent one UI event.
+            let extensionUnits: Double = {
+                switch kind {
+                case .pointerTravel: return 1
+                case .keystrokes, .mouseClicks: return max(1, eventMagnitude)
+                }
+            }()
+            existing.expiresAt = existing.expiresAt.addingTimeInterval(
+                Double(existing.extensionSecondsPerEvent) * extensionUnits
+            )
             activeBreaks[kind] = existing
+            // No objectWillChange — banner TimelineView rereads expiresAt on its 0.5s tick.
             if playSound {
                 playBreakSound(volumePercent: snapshot.soundVolumePercent, name: snapshot.soundName)
             }
@@ -110,6 +130,7 @@ final class MacActivityLimitController: ObservableObject {
             extensionSecondsPerEvent: activity.extensionSeconds
         )
         activeBreaks[kind] = brk
+        publishBreaksStructureChanged()
         if playSound {
             playBreakSound(volumePercent: snapshot.soundVolumePercent, name: snapshot.soundName)
         }
@@ -126,7 +147,13 @@ final class MacActivityLimitController: ObservableObject {
 
     /// Pausing Activity Limits also dismisses any currently enforced break.
     func clearActiveBreaksForPause() {
+        guard !activeBreaks.isEmpty else { return }
         activeBreaks.removeAll()
+        publishBreaksStructureChanged()
+    }
+
+    private func publishBreaksStructureChanged() {
+        objectWillChange.send()
     }
 
     // MARK: - Internals
@@ -165,16 +192,37 @@ final class MacActivityLimitController: ObservableObject {
     }
 
     private func pruneExpired(now: Date) {
+        guard !activeBreaks.isEmpty else { return }
+        var removed = false
         for (kind, brk) in activeBreaks where brk.expiresAt <= now {
             activeBreaks.removeValue(forKey: kind)
+            removed = true
         }
-        objectWillChange.send()
+        if removed {
+            publishBreaksStructureChanged()
+        }
     }
 
     private func playBreakSound(volumePercent: Int, name: String) {
         let nsName = NSSound.Name(name)
         let clamped = max(0, min(Float(volumePercent) / 100.0, 1))
-        if let sound = NSSound(named: nsName) {
+        let named = NSSound(named: nsName)
+        // #region agent log
+        MacAgentDebugLog.log(
+            hypothesisId: named == nil ? "C" : "B",
+            location: "MacActivityLimitController.swift:playBreakSound",
+            message: "activity-limit break sound playing",
+            data: [
+                "soundName": name,
+                "volumePercent": volumePercent,
+                "usedNamedSound": named != nil,
+                "fallbackBeep": named == nil,
+                "appActive": NSApp.isActive,
+                "activeBreakKinds": activeBreaks.keys.map(\.rawValue).sorted(),
+            ]
+        )
+        // #endregion
+        if let sound = named {
             sound.volume = clamped
             sound.play()
         } else {

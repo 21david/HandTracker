@@ -1,5 +1,8 @@
 # Hand Helper (HandTrack)
 
+// FIX NAME PROMPT:
+I had accidentally renamed like the project to R on Xcode. But it should be called HandTrack. And it has like two versions, HandTrackiOS. And HandTrackMac.
+
 **Outward-facing product name:** Hand Helper
 
 **Internal / codebase name:** HandTrack (original name). Xcode project, targets, Swift packages, bundle identifiers, and the on-disk support folder `Application Support/HandTrack` still use this name on purpose so signing, permissions, and migrations stay stable.

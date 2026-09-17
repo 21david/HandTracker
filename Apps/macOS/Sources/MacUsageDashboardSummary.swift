@@ -92,16 +92,22 @@ private struct DashValueTile: View {
 /// Compact hour / today strips; estimated time uses the same count÷rate math as the stacked charts.
 struct MacUsageDashboardSummary: View {
 
-    private enum ComfortKeys {
-        static let keysPM = "HandTrack.mac.twelveHourAvgKeysPerMinute"
-        static let clicksPM = "HandTrack.mac.twelveHourAvgClicksPerMinute"
-        static let pxK = "HandTrack.mac.twelveHourAvgPixelThousandsPerMinute"
-    }
-
     @EnvironmentObject private var store: HandTrackStore
-    @AppStorage(ComfortKeys.keysPM) private var avgKeysPM = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
-    @AppStorage(ComfortKeys.clicksPM) private var avgClicksPM = MacEstimatedWorkloadMinutes.defaultClicksPerMinute
-    @AppStorage(ComfortKeys.pxK) private var avgPixelThousandsPM = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
+    @Environment(HandTrackLivePulse.self) private var livePulse
+    @AppStorage(MacEstimatedWorkloadMinutes.keysPerMinuteKey)
+    private var avgKeysPM = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.clicksPerMinuteKey)
+    private var avgClicksPM = MacEstimatedWorkloadMinutes.defaultClicksPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.pixelThousandsPerMinuteKey)
+    private var avgPixelThousandsPM = MacEstimatedWorkloadMinutes.defaultPixelThousandsPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.scrollsPerMinuteKey)
+    private var avgScrollsPM = MacEstimatedWorkloadMinutes.defaultScrollsPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.trackpadTravelPixelThousandsPerMinuteKey)
+    private var avgTrackpadTravelKPM =
+        MacEstimatedWorkloadMinutes.defaultTrackpadTravelPixelThousandsPerMinute
+    @AppStorage(MacEstimatedWorkloadMinutes.trackpadScrollPixelThousandsPerMinuteKey)
+    private var avgTrackpadScrollKPM =
+        MacEstimatedWorkloadMinutes.defaultTrackpadScrollPixelThousandsPerMinute
     @AppStorage(HandTrackActivityLimitsStorage.dashboardRollingWindowMinutesKey)
     private var rollingWindowMinutes = HandTrackActivityLimitsStorage.Defaults.dashboardRollingWindowMinutes
 
@@ -111,6 +117,7 @@ struct MacUsageDashboardSummary: View {
     @State private var showRollingWindowEditor = false
 
     var body: some View {
+        let _ = livePulse.summary
         VStack(alignment: .leading, spacing: 13) {
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -180,7 +187,10 @@ struct MacUsageDashboardSummary: View {
         MacEstimatedWorkloadMinutes.Rates.from(
             keysPerMinute: avgKeysPM,
             clicksPerMinute: avgClicksPM,
-            pixelThousandsPerMinute: avgPixelThousandsPM
+            pixelThousandsPerMinute: avgPixelThousandsPM,
+            scrollsPerMinute: avgScrollsPM,
+            trackpadTravelPixelThousandsPerMinute: avgTrackpadTravelKPM,
+            trackpadScrollPixelThousandsPerMinute: avgTrackpadScrollKPM
         )
     }
 
@@ -255,6 +265,10 @@ struct MacUsageDashboardSummary: View {
                 clicks: todayClicks,
                 travelPixels: todayTravel,
                 scrollBumps: todayScrolls,
+                builtinKeystrokes: todayTotals?.builtinKeystrokeCount ?? 0,
+                builtinTrackpadClicks: todayTotals?.builtinTrackpadClickCount ?? 0,
+                builtinTrackpadTravelPixels: todayTotals?.builtinTrackpadTravelPixels ?? 0,
+                builtinTrackpadScrollPixels: todayTotals?.builtinTrackpadScrollPixels ?? 0,
                 rates: workloadRates
             )
         ) / 60.0
@@ -334,6 +348,10 @@ private struct MacYesterdayUsageTotalsSheet: View {
                 clicks: slot.mouseClickCount,
                 travelPixels: slot.travelPixels,
                 scrollBumps: slot.scrollBumpCount,
+                builtinKeystrokes: slot.builtinKeystrokeCount,
+                builtinTrackpadClicks: slot.builtinTrackpadClickCount,
+                builtinTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+                builtinTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
                 rates: MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
             )
         ) / 60.0

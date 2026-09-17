@@ -186,13 +186,95 @@ struct ScrollBumpFiveMinuteSlot: Identifiable, Hashable {
     }
 }
 
-/// Twelve trailing calendar hours of Mac‑recorded aggregates (minute buckets summed per hour).
+struct BuiltinKeyboardMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var keyCount: Int
+
+    var id: Date { minuteStart }
+}
+
+struct BuiltinKeyboardFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var keyCount: Int
+    var durationMinutes: Int = 5
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
+    }
+}
+
+struct BuiltinTrackpadClickMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var clickCount: Int
+
+    var id: Date { minuteStart }
+}
+
+struct BuiltinTrackpadClickFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var clickCount: Int
+    var durationMinutes: Int = 5
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
+    }
+}
+
+struct BuiltinTrackpadTravelMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var travelPixels: Double
+
+    var id: Date { minuteStart }
+}
+
+struct BuiltinTrackpadTravelFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var travelPixels: Double
+    var durationMinutes: Int = 5
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
+    }
+}
+
+struct BuiltinTrackpadScrollMinuteBucket: Identifiable, Codable, Hashable {
+    var minuteStart: Date
+    var scrollPixels: Double
+
+    var id: Date { minuteStart }
+}
+
+struct BuiltinTrackpadScrollFiveMinuteSlot: Identifiable, Hashable {
+    var slotStart: Date
+    var scrollPixels: Double
+    var durationMinutes: Int = 5
+
+    var id: Date { slotStart }
+
+    var slotEnd: Date {
+        Calendar.current.date(byAdding: .minute, value: durationMinutes, to: slotStart) ?? slotStart
+    }
+}
+
+/// Mac‑recorded aggregates for a time window. External (plug‑in) series are the primary
+/// keystroke/click/travel/scrollBump fields; MacBook built‑in series are separate so bars
+/// can merge them for height while context menus can still split keyboard vs trackpad time.
 struct ComputerUsageHourSlot: Identifiable, Hashable {
     var hourStart: Date
     var keystrokeCount: Int
     var mouseClickCount: Int
     var travelPixels: Double
     var scrollBumpCount: Int = 0
+    var builtinKeystrokeCount: Int = 0
+    var builtinTrackpadClickCount: Int = 0
+    var builtinTrackpadTravelPixels: Double = 0
+    var builtinTrackpadScrollPixels: Double = 0
 
     var id: Date { hourStart }
 }
@@ -205,6 +287,10 @@ struct ComputerUsageDaySlot: Identifiable, Hashable {
     var mouseClickCount: Int
     var travelPixels: Double
     var scrollBumpCount: Int = 0
+    var builtinKeystrokeCount: Int = 0
+    var builtinTrackpadClickCount: Int = 0
+    var builtinTrackpadTravelPixels: Double = 0
+    var builtinTrackpadScrollPixels: Double = 0
 
     var id: Date { dayStart }
 }
@@ -216,6 +302,10 @@ struct ComputerUsageWeekSlot: Identifiable, Hashable {
     var mouseClickCount: Int
     var travelPixels: Double
     var scrollBumpCount: Int = 0
+    var builtinKeystrokeCount: Int = 0
+    var builtinTrackpadClickCount: Int = 0
+    var builtinTrackpadTravelPixels: Double = 0
+    var builtinTrackpadScrollPixels: Double = 0
 
     var id: Date { weekStart }
 }
@@ -227,6 +317,10 @@ struct ComputerUsageMonthSlot: Identifiable, Hashable {
     var mouseClickCount: Int
     var travelPixels: Double
     var scrollBumpCount: Int = 0
+    var builtinKeystrokeCount: Int = 0
+    var builtinTrackpadClickCount: Int = 0
+    var builtinTrackpadTravelPixels: Double = 0
+    var builtinTrackpadScrollPixels: Double = 0
 
     var id: Date { monthStart }
 }

@@ -1,13 +1,13 @@
 import Charts
 import SwiftUI
 
-private enum LiveMouseClickChart {
-    static let fiveMinuteCap: Double = 120
-    static let fiveMinuteExcess: Double = 17
+private enum LiveBuiltinKeyboardChart {
+    static let fiveMinuteCap: Double = 275
+    static let fiveMinuteExcess: Double = 40
     static let axisLineColor: Color = Color(.sRGB, white: 0.55, opacity: 1.0)
 }
 
-struct MacMouseClickFiveMinuteChart: View {
+struct MacBuiltinKeyboardFiveMinuteChart: View {
     @EnvironmentObject private var store: HandTrackStore
     @Environment(HandTrackLivePulse.self) private var livePulse
     @AppStorage(MacLiveUsageBucketResolution.storageKey)
@@ -21,10 +21,10 @@ struct MacMouseClickFiveMinuteChart: View {
     }
 
     var body: some View {
-        let _ = livePulse.mouseClicks
-        let liveRevision = MacChartEquatableBucket.mouseClickRevision(store)
+        let _ = livePulse.builtinKeystrokes
+        let liveRevision = MacChartEquatableBucket.builtinKeyboardRevision(store)
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            MacMouseClickFiveMinuteChartRender(
+            MacBuiltinKeyboardFiveMinuteChartRender(
                 store: store,
                 referenceDate: timeline.date,
                 refreshBucket: MacChartEquatableBucket.thirtySeconds(timeline.date),
@@ -32,23 +32,22 @@ struct MacMouseClickFiveMinuteChart: View {
                 resolution: resolution.wrappedValue
             )
             .equatable()
-
         }
     }
 }
 
-private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
+private struct MacBuiltinKeyboardFiveMinuteChartRender: View, Equatable {
     let store: HandTrackStore
     let referenceDate: Date
     let refreshBucket: Int
     let liveRevision: Int
     let resolution: MacLiveUsageBucketResolution
 
-    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveMouseClickChart.fiveMinuteCap) }
-    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveMouseClickChart.fiveMinuteExcess) }
+    private var cap: Double { resolution.scaledCap(fiveMinuteCap: LiveBuiltinKeyboardChart.fiveMinuteCap) }
+    private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveBuiltinKeyboardChart.fiveMinuteExcess) }
 
     var body: some View {
-        let slots = store.mouseClicksByFiveMinuteSlotsTrailing(
+        let slots = store.builtinKeystrokesByFiveMinuteSlotsTrailing(
             reference: referenceDate,
             count: resolution.barCount,
             minutesPerSlot: resolution.minutesPerBar
@@ -57,11 +56,11 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
 
         Chart {
             RuleMark(y: .value("Baseline", 0.0))
-                .foregroundStyle(LiveMouseClickChart.axisLineColor)
+                .foregroundStyle(LiveBuiltinKeyboardChart.axisLineColor)
                 .lineStyle(StrokeStyle(lineWidth: 1))
             ForEach(Array(slots.enumerated().compactMap { index, slot -> Plotted? in
-                guard slot.clickCount > 0 else { return nil }
-                return Plotted(index: index, count: slot.clickCount)
+                guard slot.keyCount > 0 else { return nil }
+                return Plotted(index: index, count: slot.keyCount)
             })) { plotted in
                 let gap: Double = resolution == .oneMinute ? 0.08 : 0.04
                 RectangleMark(
@@ -71,8 +70,7 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
                     yEnd: .value("Top", min(Double(plotted.count), cap))
                 )
                 .foregroundStyle(
-                    MacFiveMinuteBarStyle.stackedHourBandGradient(
-                        metric: .mouseClicks,
+                    MacFiveMinuteBarStyle.barGradient(
                         stressAmount: MacFiveMinuteBarStyle.stressAmount(
                             from: Double(plotted.count),
                             cap: cap,
@@ -96,13 +94,13 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
             let labelEvery = resolution == .oneMinute ? 10 : 1
             AxisMarks(preset: .aligned, values: boundaries) { value in
                 AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
-                    .foregroundStyle(LiveMouseClickChart.axisLineColor)
+                    .foregroundStyle(LiveBuiltinKeyboardChart.axisLineColor)
                 if let idx = value.as(Int.self),
                    (idx % labelEvery == 0 || idx == slots.count),
                    let date = tickDate(idx: idx, slots: slots)
                 {
                     AxisValueLabel(centered: false) {
-                        Text(axisLabelFormatter.string(from: date))
+                        Text(Self.axisLabelFormatter.string(from: date))
                             .font(.caption2)
                             .foregroundStyle(.primary)
                     }
@@ -111,7 +109,7 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
         }
         .chartYAxis { MacFiveMinuteChartLeadingYAxis.marksNoGridGeneral() }
         .chartYAxisLabel(position: .leading) {
-            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Clicks", deviceNote: "external mouse")
+            MacFiveMinuteChartLeadingCaption.rotated180Degrees("Keystrokes", deviceNote: "macbook keyboard")
         }
         .frame(height: 200)
         .padding(.top, 20)
@@ -129,13 +127,12 @@ private struct MacMouseClickFiveMinuteChartRender: View, Equatable {
         var id: Int { index }
     }
 
-    private func tickDate(idx: Int, slots: [MouseClickFiveMinuteSlot]) -> Date? {
+    private func tickDate(idx: Int, slots: [BuiltinKeyboardFiveMinuteSlot]) -> Date? {
         if idx >= 0 && idx < slots.count { return slots[idx].slotStart }
         if idx == slots.count, let last = slots.last { return last.slotEnd }
         return nil
     }
 
-    private var axisLabelFormatter: DateFormatter { Self.axisLabelFormatter }
     private static let axisLabelFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mma"

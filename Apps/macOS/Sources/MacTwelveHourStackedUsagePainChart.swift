@@ -23,14 +23,18 @@ private struct HourComfortCaps {
         keysPerMinute: Int,
         clicksPerMinute: Int,
         pixelThousandsPerMinute: Int,
-        scrollsPerMinute: Int
+        scrollsPerMinute: Int,
+        trackpadTravelPixelThousandsPerMinute: Int = MacEstimatedWorkloadMinutes.defaultTrackpadTravelPixelThousandsPerMinute,
+        trackpadScrollPixelThousandsPerMinute: Int = MacEstimatedWorkloadMinutes.defaultTrackpadScrollPixelThousandsPerMinute
     ) -> HourComfortCaps {
         HourComfortCaps(
             rates: .from(
                 keysPerMinute: keysPerMinute,
                 clicksPerMinute: clicksPerMinute,
                 pixelThousandsPerMinute: pixelThousandsPerMinute,
-                scrollsPerMinute: scrollsPerMinute
+                scrollsPerMinute: scrollsPerMinute,
+                trackpadTravelPixelThousandsPerMinute: trackpadTravelPixelThousandsPerMinute,
+                trackpadScrollPixelThousandsPerMinute: trackpadScrollPixelThousandsPerMinute
             )
         )
     }
@@ -253,17 +257,46 @@ private func buildStackLayers(slots: [ComputerUsageHourSlot], caps: HourComfortC
     }
 
     for (i, slot) in slots.enumerated() {
-        let keyM = modalityMinutes(amount: Double(slot.keystrokeCount), perMinute: rates.keysPerMinute)
-        let clickM = modalityMinutes(amount: Double(slot.mouseClickCount), perMinute: rates.clicksPerMinute)
-        let travelM = modalityMinutes(amount: slot.travelPixels, perMinute: rates.pixelsPerMinute)
-        let scrollM = modalityMinutes(amount: Double(slot.scrollBumpCount), perMinute: rates.scrollsPerMinute)
+        let keysTotal = slot.keystrokeCount + slot.builtinKeystrokeCount
+        let clicksTotal = slot.mouseClickCount + slot.builtinTrackpadClickCount
+        let travelTotal =
+            slot.travelPixels
+            + MacEstimatedWorkloadMinutes.equivalentTravelPixels(
+                fromTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+                rates: rates
+            )
+        let scrollsTotal = Int(
+            (
+                Double(slot.scrollBumpCount)
+                    + MacEstimatedWorkloadMinutes.equivalentScrollBumps(
+                        fromTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
+                        rates: rates
+                    )
+            ).rounded(.toNearestOrAwayFromZero)
+        )
+
+        let keyM = modalityMinutes(amount: Double(keysTotal), perMinute: rates.keysPerMinute)
+        let clickM = modalityMinutes(amount: Double(clicksTotal), perMinute: rates.clicksPerMinute)
+        let travelM =
+            modalityMinutes(amount: slot.travelPixels, perMinute: rates.pixelsPerMinute)
+            + modalityMinutes(
+                amount: slot.builtinTrackpadTravelPixels,
+                perMinute: rates.trackpadTravelPixelsPerMinute
+            )
+        let scrollM =
+            modalityMinutes(amount: Double(slot.scrollBumpCount), perMinute: rates.scrollsPerMinute)
+            + modalityMinutes(
+                amount: slot.builtinTrackpadScrollPixels,
+                perMinute: rates.trackpadScrollPixelsPerMinute
+            )
 
         // Stack bottom → top: pointer travel → scrolls → clicks → keys.
+        // Display counts merge external + MacBook (trackpad travel/scroll via equivalent rates).
         let parts: [(StackHourMetric, Double)] = [
-            (.travel(slot.travelPixels), travelM),
-            (.scrollBumps(slot.scrollBumpCount), scrollM),
-            (.mouseClicks(slot.mouseClickCount), clickM),
-            (.keystrokes(slot.keystrokeCount), keyM),
+            (.travel(travelTotal), travelM),
+            (.scrollBumps(scrollsTotal), scrollM),
+            (.mouseClicks(clicksTotal), clickM),
+            (.keystrokes(keysTotal), keyM),
         ].filter { $0.1 > 1e-9 }
 
         let totalMinutes = parts.reduce(0.0) { $0 + $1.1 }
@@ -308,6 +341,14 @@ private func buildStackLayers(slots: [ComputerUsageHourSlot], caps: HourComfortC
     return rows
 }
 
+/// How the hourly stacked chart loads its columns.
+enum MacHourlyStackedUsageMode: Equatable {
+    /// Live dashboard: last `count` calendar hours ending at `referenceDate`'s hour.
+    case trailingHours(referenceDate: Date, count: Int)
+    /// Full hand-tracking day (3 AM → 3 AM): all 24 hours starting at `dayStart`.
+    case handTrackingDay(dayStart: Date)
+}
+
 private struct TwelveHourUsagePrepared {
     let slots: [ComputerUsageHourSlot]
     let stackLayers: [HourStackLayer]
@@ -317,8 +358,13 @@ private struct TwelveHourUsagePrepared {
 
     /// Must run on the main actor: reads from `@MainActor` ``HandTrackStore``.
     @MainActor
-    init(store: HandTrackStore, referenceDate: Date, comfortCaps: HourComfortCaps) {
-        slots = store.computerUsageByTrailingCalendarHours(reference: referenceDate, count: 12)
+    init(store: HandTrackStore, mode: MacHourlyStackedUsageMode, comfortCaps: HourComfortCaps) {
+        switch mode {
+        case .trailingHours(let referenceDate, let count):
+            slots = store.computerUsageByTrailingCalendarHours(reference: referenceDate, count: count)
+        case .handTrackingDay(let dayStart):
+            slots = store.computerUsageHours(forHandTrackingDayStarting: dayStart)
+        }
         stackLayers = buildStackLayers(slots: slots, caps: comfortCaps)
         hourBoundaries = Array(0...slots.count)
 
@@ -370,6 +416,10 @@ private func twelveHourEstimatedMinutesLabel(slot: ComputerUsageHourSlot) -> Str
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
         scrollBumps: slot.scrollBumpCount,
+        builtinKeystrokes: slot.builtinKeystrokeCount,
+        builtinTrackpadClicks: slot.builtinTrackpadClickCount,
+        builtinTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+        builtinTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
         rates: rates
     )
     return MacEstimatedWorkloadMinutes.compactDurationLabel(totalMinutes: total)
@@ -412,6 +462,8 @@ private struct TwelveHourComfortCalibrationPopover: View {
     @Binding var clicksPerMinute: Int
     @Binding var pixelThousandsPerMinute: Int
     @Binding var scrollsPerMinute: Int
+    @Binding var trackpadTravelPixelThousandsPerMinute: Int
+    @Binding var trackpadScrollPixelThousandsPerMinute: Int
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -421,7 +473,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
                 .foregroundStyle(Color(nsColor: .labelColor))
 
             Text(
-                "Used to convert raw keys / clicks / scrolls / pointer travel into estimated minutes (count ÷ rate). Also scales bar heights."
+                "Used to convert raw keys / clicks / scrolls / pointer travel into estimated minutes (count ÷ rate). Also scales bar heights. MacBook trackpad travel and scroll use their own rates."
             )
             .font(.caption2)
             .foregroundStyle(Color(nsColor: .secondaryLabelColor))
@@ -471,6 +523,28 @@ private struct TwelveHourComfortCalibrationPopover: View {
                     .foregroundStyle(Color(nsColor: .labelColor))
             }
 
+            minuteRow(title: "Trackpad k px/min") {
+                Stepper("", value: $trackpadTravelPixelThousandsPerMinute, in: Self.pxKRange, step: 1)
+                    .labelsHidden()
+                    .accessibilityLabel(Text("Average thousands of trackpad travel pixels per minute"))
+                Text("\(trackpadTravelPixelThousandsPerMinute)")
+                    .font(.body)
+                    .monospacedDigit()
+                    .frame(minWidth: 44, alignment: .trailing)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+            }
+
+            minuteRow(title: "Trackpad scroll k/min") {
+                Stepper("", value: $trackpadScrollPixelThousandsPerMinute, in: Self.pxKRange, step: 1)
+                    .labelsHidden()
+                    .accessibilityLabel(Text("Average thousands of trackpad scroll pixels per minute"))
+                Text("\(trackpadScrollPixelThousandsPerMinute)")
+                    .font(.body)
+                    .monospacedDigit()
+                    .frame(minWidth: 44, alignment: .trailing)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+            }
+
             HStack {
                 Spacer(minLength: 0)
                 Button("Done") { dismiss() }
@@ -488,7 +562,7 @@ private struct TwelveHourComfortCalibrationPopover: View {
             Text(title)
                 .font(.callout)
                 .foregroundStyle(Color(nsColor: .labelColor))
-                .frame(minWidth: 124, alignment: .leading)
+                .frame(minWidth: 148, alignment: .leading)
 
             controls()
 
@@ -501,16 +575,22 @@ private struct TwelveHourComfortCalibrationPopover: View {
     private static let pxKRange = 1...500
     private static let scrollsRange = 1...300
 
-    private static let popoverReadableWidth: CGFloat = 312
+    private static let popoverReadableWidth: CGFloat = 340
 }
 
 
-private func twelveHourColumnUsageMinutes(slot: ComputerUsageHourSlot) -> (keyboard: Int, mouse: Int) {
+private func twelveHourColumnUsageMinutes(
+    slot: ComputerUsageHourSlot
+) -> (keyboard: Int, mouse: Int, macbookKeyboard: Int, macbookTrackpad: Int) {
     MacEstimatedWorkloadMinutes.columnBreakdown(
         keystrokes: slot.keystrokeCount,
         clicks: slot.mouseClickCount,
         travelPixels: slot.travelPixels,
         scrollBumps: slot.scrollBumpCount,
+        builtinKeystrokes: slot.builtinKeystrokeCount,
+        builtinTrackpadClicks: slot.builtinTrackpadClickCount,
+        builtinTrackpadTravelPixels: slot.builtinTrackpadTravelPixels,
+        builtinTrackpadScrollPixels: slot.builtinTrackpadScrollPixels,
         rates: .fromUserDefaults()
     )
 }
@@ -525,9 +605,13 @@ private struct TwelveHourColumnContextMenuOverlay: View {
             let plotBounds = geometry[plotFrameAnchor]
             let gap = TwelveHourCombinedChart.xSlotGap
             let regions = Array(slots.enumerated()).compactMap { idx, slot -> MacUsageBreakdownHitRegion? in
-                guard slot.keystrokeCount > 0 || slot.mouseClickCount > 0 || slot.travelPixels > 0 || slot.scrollBumpCount > 0 else {
-                    return nil
-                }
+                let hasExternal =
+                    slot.keystrokeCount > 0 || slot.mouseClickCount > 0
+                    || slot.travelPixels > 0 || slot.scrollBumpCount > 0
+                let hasBuiltin =
+                    slot.builtinKeystrokeCount > 0 || slot.builtinTrackpadClickCount > 0
+                    || slot.builtinTrackpadTravelPixels > 0 || slot.builtinTrackpadScrollPixels > 0
+                guard hasExternal || hasBuiltin else { return nil }
                 let centerXData = Double(idx) + 0.5
                 let xStartData = Double(idx) + gap
                 let xEndData = Double(idx + 1) - gap
@@ -545,7 +629,9 @@ private struct TwelveHourColumnContextMenuOverlay: View {
                         height: max(8, abs(yTop.y - yBottom.y))
                     ),
                     keyboardMinutes: minutes.keyboard,
-                    mouseMinutes: minutes.mouse
+                    mouseMinutes: minutes.mouse,
+                    macbookKeyboardMinutes: minutes.macbookKeyboard,
+                    macbookTrackpadMinutes: minutes.macbookTrackpad
                 )
             }
             MacUsageBreakdownRightClickLayer(regions: regions)
@@ -558,6 +644,7 @@ private struct TwelveHourColumnContextMenuOverlay: View {
 private struct TwelveHourUsageChartPanel: View {
     let prepared: TwelveHourUsagePrepared
     let painVisibility: TwelveHourPainVisibility
+    var chartHeight: CGFloat = 276
 
     private var slots: [ComputerUsageHourSlot] { prepared.slots }
 
@@ -610,7 +697,7 @@ private struct TwelveHourUsageChartPanel: View {
         .chartXAxis {
             hourlyBoundaryAxisMarks(boundaries: prepared.hourBoundaries, slots: slots)
         }
-        .frame(height: 276)
+        .frame(height: chartHeight)
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 TwelveHourColumnContextMenuOverlay(
@@ -771,10 +858,13 @@ private struct TwelveHourUsageChartPanel: View {
 
     @AxisContentBuilder
     private func hourlyBoundaryAxisMarks(boundaries: [Int], slots: [ComputerUsageHourSlot]) -> some AxisContent {
+        // 24-hour day view: label every other boundary so ticks stay readable.
+        let labelStride = slots.count > 12 ? 2 : 1
         AxisMarks(preset: .aligned, values: boundaries) { value in
             AxisTick(length: 5, stroke: StrokeStyle(lineWidth: 1))
                 .foregroundStyle(TwelveHourCombinedChart.axisBaseline)
             if let idx = value.as(Int.self),
+               (idx % labelStride == 0 || idx == slots.count),
                let date = Self.hourTickDate(idx: idx, slots: slots)
             {
                 AxisValueLabel(centered: false) {
@@ -824,10 +914,33 @@ private struct TwelveHourPainGraphsToggleMatrix: View {
     }
 }
 
-// MARK: - Public entry point
+// MARK: - Public entry points
 
+/// Live dashboard chart: trailing 12 calendar hours.
 struct MacTwelveHourStackedUsagePainChart: View {
     @EnvironmentObject private var store: HandTrackStore
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            MacHourlyStackedUsagePainChart(
+                store: store,
+                mode: .trailingHours(referenceDate: timeline.date, count: 12),
+                title: "Past 12 hours",
+                chartHeight: 276,
+                refreshBucket: MacChartEquatableBucket.stackedChartClockBucket(timeline.date)
+            )
+        }
+    }
+}
+
+/// Full-window (or embedded) hourly chart for a hand-tracking day or custom mode.
+struct MacHourlyStackedUsagePainChart: View {
+    let store: HandTrackStore
+    let mode: MacHourlyStackedUsageMode
+    let title: String
+    var chartHeight: CGFloat = 276
+    /// Clock bucket for live refresh equality; use `0` for a frozen historical day.
+    var refreshBucket: Int = 0
 
     @AppStorage(TwelveHourComfortStorage.avgKeysPerMinuteKey)
     private var avgKeysPerMinute = MacEstimatedWorkloadMinutes.defaultKeysPerMinute
@@ -841,6 +954,14 @@ struct MacTwelveHourStackedUsagePainChart: View {
 
     @AppStorage(TwelveHourComfortStorage.avgScrollsPerMinuteKey)
     private var avgScrollsPerMinute = MacEstimatedWorkloadMinutes.defaultScrollsPerMinute
+
+    @AppStorage(MacEstimatedWorkloadMinutes.trackpadTravelPixelThousandsPerMinuteKey)
+    private var avgTrackpadTravelPixelThousandsPerMinute =
+        MacEstimatedWorkloadMinutes.defaultTrackpadTravelPixelThousandsPerMinute
+
+    @AppStorage(MacEstimatedWorkloadMinutes.trackpadScrollPixelThousandsPerMinuteKey)
+    private var avgTrackpadScrollPixelThousandsPerMinute =
+        MacEstimatedWorkloadMinutes.defaultTrackpadScrollPixelThousandsPerMinute
 
     @State private var showComfortCalibration = false
 
@@ -857,40 +978,46 @@ struct MacTwelveHourStackedUsagePainChart: View {
         )
     }
 
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            MacTwelveHourStackedUsagePainChartFrame(
-                store: store,
-                referenceDate: timeline.date,
-                refreshBucket: MacChartEquatableBucket.stackedChartClockBucket(timeline.date),
-                painRevision: MacChartEquatableBucket.painLogsRevision(store),
-                capsFingerprint: capsFingerprint,
-                painVisibility: TwelveHourPainVisibility(showLeft: showLeftPain, showRight: showRightPain),
-                showComfortCalibration: $showComfortCalibration,
-                avgKeysPerMinute: $avgKeysPerMinute,
-                avgClicksPerMinute: $avgClicksPerMinute,
-                avgPixelThousandsPerMinute: $avgPixelThousandsPerMinute,
-                avgScrollsPerMinute: $avgScrollsPerMinute,
-                painVisibilityBinding: painVisibilityBinding
-            )
-            .equatable()
-        }
-    }
-
     private var capsFingerprint: Int {
         var hasher = Hasher()
         hasher.combine(avgKeysPerMinute)
         hasher.combine(avgClicksPerMinute)
         hasher.combine(avgPixelThousandsPerMinute)
         hasher.combine(avgScrollsPerMinute)
+        hasher.combine(avgTrackpadTravelPixelThousandsPerMinute)
+        hasher.combine(avgTrackpadScrollPixelThousandsPerMinute)
         return hasher.finalize()
+    }
+
+    var body: some View {
+        MacTwelveHourStackedUsagePainChartFrame(
+            store: store,
+            mode: mode,
+            title: title,
+            chartHeight: chartHeight,
+            refreshBucket: refreshBucket,
+            painRevision: MacChartEquatableBucket.painLogsRevision(store),
+            capsFingerprint: capsFingerprint,
+            painVisibility: TwelveHourPainVisibility(showLeft: showLeftPain, showRight: showRightPain),
+            showComfortCalibration: $showComfortCalibration,
+            avgKeysPerMinute: $avgKeysPerMinute,
+            avgClicksPerMinute: $avgClicksPerMinute,
+            avgPixelThousandsPerMinute: $avgPixelThousandsPerMinute,
+            avgScrollsPerMinute: $avgScrollsPerMinute,
+            avgTrackpadTravelPixelThousandsPerMinute: $avgTrackpadTravelPixelThousandsPerMinute,
+            avgTrackpadScrollPixelThousandsPerMinute: $avgTrackpadScrollPixelThousandsPerMinute,
+            painVisibilityBinding: painVisibilityBinding
+        )
+        .equatable()
     }
 }
 
-/// Skips rebuilding the heavy 12‑hour chart when only live key/click/scroll counters change.
+/// Skips rebuilding the heavy hourly chart when only live key/click/scroll counters change.
 private struct MacTwelveHourStackedUsagePainChartFrame: View, Equatable {
     let store: HandTrackStore
-    let referenceDate: Date
+    let mode: MacHourlyStackedUsageMode
+    let title: String
+    let chartHeight: CGFloat
     let refreshBucket: Int
     let painRevision: UInt64
     let capsFingerprint: Int
@@ -900,10 +1027,15 @@ private struct MacTwelveHourStackedUsagePainChartFrame: View, Equatable {
     @Binding var avgClicksPerMinute: Int
     @Binding var avgPixelThousandsPerMinute: Int
     @Binding var avgScrollsPerMinute: Int
+    @Binding var avgTrackpadTravelPixelThousandsPerMinute: Int
+    @Binding var avgTrackpadScrollPixelThousandsPerMinute: Int
     var painVisibilityBinding: Binding<TwelveHourPainVisibility>
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.refreshBucket == rhs.refreshBucket
+        lhs.mode == rhs.mode
+            && lhs.title == rhs.title
+            && lhs.chartHeight == rhs.chartHeight
+            && lhs.refreshBucket == rhs.refreshBucket
             && lhs.painRevision == rhs.painRevision
             && lhs.capsFingerprint == rhs.capsFingerprint
             && lhs.painVisibility == rhs.painVisibility
@@ -914,12 +1046,14 @@ private struct MacTwelveHourStackedUsagePainChartFrame: View, Equatable {
             keysPerMinute: avgKeysPerMinute,
             clicksPerMinute: avgClicksPerMinute,
             pixelThousandsPerMinute: avgPixelThousandsPerMinute,
-            scrollsPerMinute: avgScrollsPerMinute
+            scrollsPerMinute: avgScrollsPerMinute,
+            trackpadTravelPixelThousandsPerMinute: avgTrackpadTravelPixelThousandsPerMinute,
+            trackpadScrollPixelThousandsPerMinute: avgTrackpadScrollPixelThousandsPerMinute
         )
-        let prepared = TwelveHourUsagePrepared(store: store, referenceDate: referenceDate, comfortCaps: caps)
+        let prepared = TwelveHourUsagePrepared(store: store, mode: mode, comfortCaps: caps)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Past 12 hours")
+                Text(title)
                     .font(.headline)
 
                 Spacer(minLength: 8)
@@ -942,12 +1076,18 @@ private struct MacTwelveHourStackedUsagePainChartFrame: View, Equatable {
                         keysPerMinute: $avgKeysPerMinute,
                         clicksPerMinute: $avgClicksPerMinute,
                         pixelThousandsPerMinute: $avgPixelThousandsPerMinute,
-                        scrollsPerMinute: $avgScrollsPerMinute
+                        scrollsPerMinute: $avgScrollsPerMinute,
+                        trackpadTravelPixelThousandsPerMinute: $avgTrackpadTravelPixelThousandsPerMinute,
+                        trackpadScrollPixelThousandsPerMinute: $avgTrackpadScrollPixelThousandsPerMinute
                     )
                 }
             }
 
-            TwelveHourUsageChartPanel(prepared: prepared, painVisibility: painVisibility)
+            TwelveHourUsageChartPanel(
+                prepared: prepared,
+                painVisibility: painVisibility,
+                chartHeight: chartHeight
+            )
         }
     }
 }
