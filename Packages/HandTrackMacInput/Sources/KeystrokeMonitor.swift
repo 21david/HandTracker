@@ -38,6 +38,11 @@ final class KeystrokeMonitor {
     private static let learnedBuiltinKeyboardTypesKey = "HandTrack.learnedBuiltinKeyboardTypes"
 
     var onKeystroke: (() -> Void)?
+    /// Fired with the same external key as ``onKeystroke``, plus a stable device identity.
+    /// Built-in keystrokes never go through this callback.
+    var onExternalKeyboardKeystroke: ((ExternalKeyboardIdentity) -> Void)?
+    /// Connected plug-in boards (not MacBook / Karabiner / mouse receivers).
+    var onExternalKeyboardInventory: (([ExternalKeyboardIdentity]) -> Void)?
     var onMouseClick: (() -> Void)?
     /// Discrete mouse-wheel notches.
     var onScrollBumps: ((Int) -> Void)?
@@ -93,6 +98,10 @@ final class KeystrokeMonitor {
     private let keyboardLock = NSLock()
     private var lastBuiltinHIDKeyAt: CFAbsoluteTime = 0
     private var lastExternalHIDKeyAt: CFAbsoluteTime = 0
+    private var lastExternalHIDIdentity: ExternalKeyboardIdentity?
+    private var lastUsedExternalIdentity: ExternalKeyboardIdentity?
+    private var connectedExternalIdentities: [ExternalKeyboardIdentity] = []
+    private var connectedExternalTransports: [String: String] = [:]
     private var hasExternalKeyboardConnected = false
     /// Karabiner’s virtual keyboard collapses every physical keyboard to one CGEvent type
     /// (observed: 46), so learned-type matching must not run while it is present.
@@ -125,6 +134,11 @@ final class KeystrokeMonitor {
     private var debugTapScrollCount = 0
     private var debugTapCallbackNanos: UInt64 = 0
     private var debugTapMainThreadCount = 0
+    private var debugSessionHIDLogCount = 0
+    private var debugSessionEmitLogCount = 0
+    private var debugSessionResolveLogCount = 0
+    private var debugSessionAttachLogCount = 0
+    private var debugSessionCGFieldLogCount = 0
     // #endregion
 
     var isMonitoring: Bool {
@@ -145,6 +159,41 @@ final class KeystrokeMonitor {
     ) {
         // Disabled after verified fix — keep call sites folded for now.
         _ = (hypothesisId, location, message, data)
+    }
+
+    private func sessionDebugLog(
+        hypothesisId: String,
+        location: String,
+        message: String,
+        data: [String: Any] = [:]
+    ) {
+        let path = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-869910.log"
+        var payload: [String: Any] = [
+            "sessionId": "869910",
+            "runId": "pre-fix",
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "message": message,
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+            "data": data,
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let json = try? JSONSerialization.data(withJSONObject: payload),
+              var line = String(data: json, encoding: .utf8)
+        else { return }
+        line.append("\n")
+        Self.debugLogQueue.async {
+            let url = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: path),
+               let handle = try? FileHandle(forWritingTo: url)
+            {
+                defer { try? handle.close() }
+                handle.seekToEndOfFile()
+                handle.write(Data(line.utf8))
+            } else {
+                try? line.write(to: url, atomically: false, encoding: .utf8)
+            }
+        }
     }
     // #endregion
 
@@ -419,6 +468,7 @@ final class KeystrokeMonitor {
             return
         }
 
+        logCGEventIdentityFields(event, keycode: keycode, kbdType: kbdType)
         classifyAndRecordKeystroke(keycode: keycode, kbdType: kbdType, flags: flags)
     }
 
@@ -471,6 +521,14 @@ final class KeystrokeMonitor {
             let externalConnected = self.hasExternalKeyboardConnected
             let karabiner = self.hasKarabinerVirtualKeyboard
             let learned = self.learnedBuiltinKeyboardTypes
+            let resolvedExternal = self.resolvedExternalIdentityAssumingLocked(now: now)
+            let hidAge = now - self.lastExternalHIDKeyAt
+            let hidId = self.lastExternalHIDIdentity?.id ?? ""
+            let lastUsedId = self.lastUsedExternalIdentity?.id ?? ""
+            let connectedIds = self.connectedExternalIdentities.map(\.id)
+            let connectedNames = self.connectedExternalIdentities.map(\.defaultName)
+            let usbFallbackId = self.uniqueUSBExternalIdentityAssumingLocked()?.id ?? ""
+            let transports = self.connectedExternalTransports
             self.keyboardLock.unlock()
 
             // With Karabiner, physical IOHID only stamps a claim; CGEvent counts once using it.
@@ -510,7 +568,28 @@ final class KeystrokeMonitor {
                         )
                     }
                     // #endregion
-                    self.onKeystroke?()
+                    // #region agent log
+                    self.debugSessionResolveLogCount += 1
+                    if self.debugSessionResolveLogCount <= 25 {
+                        self.sessionDebugLog(
+                            hypothesisId: "C",
+                            location: "KeystrokeMonitor.classifyAndRecordKeystroke",
+                            message: "cgevent_karabiner_external",
+                            data: [
+                                "resolvedId": resolvedExternal.id,
+                                "resolvedName": resolvedExternal.defaultName,
+                                "hidAgeMs": Int(hidAge * 1000),
+                                "hidId": hidId,
+                                "lastUsedId": lastUsedId,
+                                "connectedIds": connectedIds,
+                                "connectedNames": connectedNames,
+                                "kbdType": kbdType,
+                                "keycode": keycode,
+                            ]
+                        )
+                    }
+                    // #endregion
+                    self.emitExternalKeystroke(resolvedExternal)
                     return
                 }
                 // MacBook after Karabiner-ignore: type 70 + flags 256 (not G Hub). Prefer builtin
@@ -582,7 +661,33 @@ final class KeystrokeMonitor {
                 self.rememberBuiltinKeyboardType(kbdType)
                 self.onBuiltinKeystroke?()
             } else {
-                self.onKeystroke?()
+                // #region agent log
+                self.debugSessionResolveLogCount += 1
+                if self.debugSessionResolveLogCount <= 25 {
+                    self.sessionDebugLog(
+                        hypothesisId: "C",
+                        location: "KeystrokeMonitor.classifyAndRecordKeystroke",
+                        message: "cgevent_fallback_external",
+                        data: [
+                            "resolvedId": resolvedExternal.id,
+                            "resolvedName": resolvedExternal.defaultName,
+                            "hidAgeMs": Int(hidAge * 1000),
+                            "hidId": hidId,
+                            "lastUsedId": lastUsedId,
+                            "connectedIds": connectedIds,
+                            "connectedNames": connectedNames,
+                            "usbFallbackId": usbFallbackId,
+                            "transports": transports,
+                            "hidClaimed": externalHIDClaimed,
+                            "kbdType": kbdType,
+                            "keycode": keycode,
+                            "karabiner": karabiner,
+                            "runId": "post-fix7",
+                        ]
+                    )
+                }
+                // #endregion
+                self.emitExternalKeystroke(resolvedExternal)
             }
         }
 
@@ -659,9 +764,44 @@ final class KeystrokeMonitor {
         hasKarabinerVirtualKeyboard = inventory.karabinerPresent
         builtinKeyboardRegistryIDs = inventory.builtinRegistryIDs
         externalKeyboardRegistryIDs = inventory.externalRegistryIDs
+        connectedExternalIdentities = inventory.externalIdentities
+        connectedExternalTransports = inventory.identityTransports
         lastKeyboardInventoryAt = now
         let seized = physicalHIDSeizedByKarabiner
+        let identities = inventory.externalIdentities
         keyboardLock.unlock()
+        if !identities.isEmpty {
+            onExternalKeyboardInventory?(identities)
+        }
+
+        // #region agent log
+        debugInventoryLogCount += 1
+        if debugInventoryLogCount <= 8 {
+            sessionDebugLog(
+                hypothesisId: "B",
+                location: "KeystrokeMonitor.refreshKeyboardInventory",
+                message: "keyboard_inventory",
+                data: [
+                    "externalConnected": inventory.externalConnected,
+                    "karabinerPresent": inventory.karabinerPresent,
+                    "observerCount": physicalHIDObservers.count,
+                    "seized": seized,
+                    "identities": identities.map {
+                        [
+                            "id": $0.id,
+                            "name": $0.defaultName,
+                            "vendor": $0.vendorID,
+                            "productID": $0.productID,
+                            "product": $0.product,
+                            "manufacturer": $0.manufacturer,
+                            "transport": inventory.identityTransports[$0.id] ?? "",
+                        ]
+                    },
+                    "runId": "post-fix7",
+                ]
+            )
+        }
+        // #endregion
 
         // Only retry device opens when not already blocked by Karabiner seize.
         if hidManager != nil, !seized {
@@ -700,6 +840,8 @@ final class KeystrokeMonitor {
         var karabinerPresent: Bool
         var builtinRegistryIDs: Set<UInt64>
         var externalRegistryIDs: Set<UInt64>
+        var externalIdentities: [ExternalKeyboardIdentity]
+        var identityTransports: [String: String]
         var devices: [[String: Any]]
     }
 
@@ -717,6 +859,8 @@ final class KeystrokeMonitor {
         var karabinerPresent = false
         var builtinIDs: Set<UInt64> = []
         var externalIDs: Set<UInt64> = []
+        var identitiesByID: [String: ExternalKeyboardIdentity] = [:]
+        var identityTransports: [String: String] = [:]
         for device in devices {
             let product = (IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String) ?? ""
             let manufacturer = (IOHIDDeviceGetProperty(device, kIOHIDManufacturerKey as CFString) as? String) ?? ""
@@ -740,6 +884,14 @@ final class KeystrokeMonitor {
                     builtinIDs.insert(registryID)
                 } else if !isVirtual, !isTouchBar, !isBuiltin, !isMouseReceiver {
                     externalIDs.insert(registryID)
+                }
+            }
+            if !isVirtual, !isTouchBar, !isBuiltin, !isMouseReceiver {
+                let identity = identity(from: device)
+                identitiesByID[identity.id] = identity
+                let existingTransport = identityTransports[identity.id] ?? ""
+                if existingTransport != "USB" {
+                    identityTransports[identity.id] = transport
                 }
             }
             if isVirtual { karabinerPresent = true }
@@ -767,6 +919,8 @@ final class KeystrokeMonitor {
             karabinerPresent: karabinerPresent,
             builtinRegistryIDs: builtinIDs,
             externalRegistryIDs: externalIDs,
+            externalIdentities: Array(identitiesByID.values).sorted { $0.defaultName < $1.defaultName },
+            identityTransports: identityTransports,
             devices: summaries
         )
     }
@@ -805,16 +959,24 @@ final class KeystrokeMonitor {
     }
 
     private func attachPhysicalKeyboardHIDObservers() {
-        guard let manager = hidManager else { return }
-        let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
-        var sawBuiltinExclusive = false
+        guard hidManager != nil else { return }
+        // Match inventory: a fresh CopyDevices sees newly plugged boards. The long-lived
+        // hidManager snapshot can stay stuck on the MacBook keyboard after Kinesis connects.
+        let probe = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        let matching: [String: Any] = [
+            kIOHIDDeviceUsagePageKey as String: kHIDPage_GenericDesktop,
+            kIOHIDDeviceUsageKey as String: kHIDUsage_GD_Keyboard,
+        ]
+        IOHIDManagerSetDeviceMatching(probe, matching as CFDictionary)
+        let devices = (IOHIDManagerCopyDevices(probe) as? Set<IOHIDDevice>) ?? []
+        var sawExclusive = false
         for device in devices {
             let result = tryAttachPhysicalKeyboardObserver(for: device)
-            if result == .builtinExclusive {
-                sawBuiltinExclusive = true
+            if result == .builtinExclusive || result == .exclusive {
+                sawExclusive = true
             }
         }
-        if sawBuiltinExclusive {
+        if sawExclusive {
             releaseBuiltinKeyboardFromKarabinerIfNeeded()
         }
     }
@@ -861,10 +1023,42 @@ final class KeystrokeMonitor {
                     "runId": "post-fix5",
                 ]
             )
+            debugSessionAttachLogCount += 1
+            if debugSessionAttachLogCount <= 16 {
+                sessionDebugLog(
+                    hypothesisId: "A",
+                    location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
+                    message: "hid_attach",
+                    data: [
+                        "product": product,
+                        "isBuiltin": isBuiltin,
+                        "result": "exclusive",
+                        "openResult": Int(openResult),
+                    ]
+                )
+            }
             // #endregion
             return isBuiltin ? .builtinExclusive : .exclusive
         }
-        guard openResult == kIOReturnSuccess else { return .failed }
+        guard openResult == kIOReturnSuccess else {
+            // #region agent log
+            debugSessionAttachLogCount += 1
+            if debugSessionAttachLogCount <= 16 {
+                sessionDebugLog(
+                    hypothesisId: "A",
+                    location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
+                    message: "hid_attach",
+                    data: [
+                        "product": product,
+                        "isBuiltin": isBuiltin,
+                        "result": "failed",
+                        "openResult": Int(openResult),
+                    ]
+                )
+            }
+            // #endregion
+            return .failed
+        }
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputValueCallback(observer, { context, _, _, value in
@@ -878,6 +1072,22 @@ final class KeystrokeMonitor {
         physicalHIDObserverServiceIDs.insert(entryID)
         physicalHIDObservers.append(observer)
         keyboardLock.unlock()
+        // #region agent log
+        debugSessionAttachLogCount += 1
+        if debugSessionAttachLogCount <= 16 {
+            sessionDebugLog(
+                hypothesisId: "A",
+                location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
+                message: "hid_attach",
+                data: [
+                    "product": product,
+                    "isBuiltin": isBuiltin,
+                    "result": "opened",
+                    "openResult": Int(openResult),
+                ]
+            )
+        }
+        // #endregion
         return .opened
     }
 
@@ -886,24 +1096,48 @@ final class KeystrokeMonitor {
         didAttemptKarabinerBuiltinRelease = true
         let changed = MacKarabinerBuiltinKeyboardRelease.ensureBuiltinKeyboardIgnored()
         // #region agent log
+        sessionDebugLog(
+            hypothesisId: "A",
+            location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
+            message: "karabiner_release_devices",
+            data: [
+                "configChanged": changed,
+                "runId": "post-fix7",
+            ]
+        )
         agentDebugLog(
             hypothesisId: "I",
             location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
             message: "karabiner_release_builtin",
             data: [
                 "configChanged": changed,
-                "runId": "post-fix5",
+                "runId": "post-fix7",
             ]
         )
         // #endregion
         // Karabiner reloads async; retry HID open on the input-tap run loop (device callbacks need it).
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        scheduleHIDRetryAfterKarabinerRelease(delay: 1.5)
+        scheduleHIDRetryAfterKarabinerRelease(delay: 4.0)
+    }
+
+    private func scheduleHIDRetryAfterKarabinerRelease(delay: TimeInterval) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             let work = { [weak self] in
                 guard let self else { return }
                 self.physicalHIDSeizedByKarabiner = false
                 self.attachPhysicalKeyboardHIDObservers()
                 // #region agent log
+                self.sessionDebugLog(
+                    hypothesisId: "A",
+                    location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
+                    message: "hid_retry_after_karabiner_release",
+                    data: [
+                        "delayMs": Int(delay * 1000),
+                        "observerCount": self.physicalHIDObservers.count,
+                        "runId": "post-fix7",
+                    ]
+                )
                 self.agentDebugLog(
                     hypothesisId: "I",
                     location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
@@ -911,7 +1145,7 @@ final class KeystrokeMonitor {
                     data: [
                         "observerCount": self.physicalHIDObservers.count,
                         "seized": self.physicalHIDSeizedByKarabiner,
-                        "runId": "post-fix5",
+                        "runId": "post-fix7",
                     ]
                 )
                 // #endregion
@@ -991,26 +1225,33 @@ final class KeystrokeMonitor {
                 onBuiltinKeystroke?()
             }
         } else {
+            let identity = Self.identity(from: device)
             lastExternalHIDKeyAt = CFAbsoluteTimeGetCurrent()
+            lastExternalHIDIdentity = identity
+            lastUsedExternalIdentity = identity
             keyboardLock.unlock()
             // #region agent log
-            debugHIDClaimLogCount += 1
-            if debugHIDClaimLogCount <= 16 {
-                agentDebugLog(
-                    hypothesisId: "G",
+            debugSessionHIDLogCount += 1
+            if debugSessionHIDLogCount <= 25 {
+                sessionDebugLog(
+                    hypothesisId: "A",
                     location: "KeystrokeMonitor.handlePhysicalHIDKeyboardValue",
                     message: "hid_external_claim",
                     data: [
                         "usage": Int(usage),
                         "product": product,
+                        "keyboardId": identity.id,
+                        "defaultName": identity.defaultName,
+                        "vendorID": identity.vendorID,
+                        "productID": identity.productID,
+                        "karabiner": karabiner,
                         "countNow": !karabiner,
-                        "runId": "post-fix3",
                     ]
                 )
             }
             // #endregion
             if !karabiner {
-                onKeystroke?()
+                emitExternalKeystroke(identity)
             }
         }
     }
@@ -1085,6 +1326,110 @@ final class KeystrokeMonitor {
             }
         }
         return false
+    }
+
+    private func emitExternalKeystroke(_ identity: ExternalKeyboardIdentity) {
+        keyboardLock.lock()
+        lastUsedExternalIdentity = identity
+        keyboardLock.unlock()
+        // #region agent log
+        debugSessionEmitLogCount += 1
+        if debugSessionEmitLogCount <= 25 {
+            sessionDebugLog(
+                hypothesisId: "D",
+                location: "KeystrokeMonitor.emitExternalKeystroke",
+                message: "emit_external",
+                data: [
+                    "keyboardId": identity.id,
+                    "defaultName": identity.defaultName,
+                    "vendorID": identity.vendorID,
+                    "productID": identity.productID,
+                    "product": identity.product,
+                ]
+            )
+        }
+        // #endregion
+        onKeystroke?()
+        onExternalKeyboardKeystroke?(identity)
+    }
+
+    /// Caller must already hold ``keyboardLock``.
+    private func resolvedExternalIdentityAssumingLocked(now: CFAbsoluteTime) -> ExternalKeyboardIdentity {
+        if now - lastExternalHIDKeyAt < Self.externalHIDClaimWindow, let hid = lastExternalHIDIdentity {
+            return hid
+        }
+        if connectedExternalIdentities.count == 1, let only = connectedExternalIdentities.first {
+            return only
+        }
+        // HID-claimed keys already returned above. Unique USB board is the only remaining
+        // physical source Karabiner can still seize (Kinesis). Bluetooth Keychron is ignored
+        // in Karabiner so its keys hit HID, not this fallback.
+        if let usbOnly = uniqueUSBExternalIdentityAssumingLocked() {
+            return usbOnly
+        }
+        if let lastUsed = lastUsedExternalIdentity,
+           connectedExternalIdentities.contains(where: { $0.id == lastUsed.id })
+        {
+            return lastUsed
+        }
+        if let hid = lastExternalHIDIdentity {
+            return hid
+        }
+        if let lastUsed = lastUsedExternalIdentity {
+            return lastUsed
+        }
+        return .unknown
+    }
+
+    /// Caller must already hold ``keyboardLock``.
+    private func uniqueUSBExternalIdentityAssumingLocked() -> ExternalKeyboardIdentity? {
+        let usb = connectedExternalIdentities.filter { identity in
+            (connectedExternalTransports[identity.id] ?? "").localizedCaseInsensitiveContains("USB")
+        }
+        return usb.count == 1 ? usb.first : nil
+    }
+
+    private func logCGEventIdentityFields(_ event: CGEvent, keycode: Int64, kbdType: Int64) {
+        // #region agent log
+        debugSessionCGFieldLogCount += 1
+        guard debugSessionCGFieldLogCount <= 8 else { return }
+        var nonzero: [String: Int] = [:]
+        for field in 0...90 {
+            guard let cgField = CGEventField(rawValue: UInt32(field)) else { continue }
+            let value = event.getIntegerValueField(cgField)
+            if value != 0 {
+                nonzero["f\(field)"] = Int(value)
+            }
+        }
+        sessionDebugLog(
+            hypothesisId: "J",
+            location: "KeystrokeMonitor.handleKeyDown",
+            message: "cgevent_fields",
+            data: [
+                "keycode": keycode,
+                "kbdType": kbdType,
+                "srcPID": event.getIntegerValueField(.eventSourceUnixProcessID),
+                "srcUser": event.getIntegerValueField(.eventSourceUserData),
+                "srcState": event.getIntegerValueField(.eventSourceStateID),
+                "nonzero": nonzero,
+            ]
+        )
+        // #endregion
+    }
+
+    private static func identity(from device: IOHIDDevice) -> ExternalKeyboardIdentity {
+        let product = (IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String) ?? ""
+        let manufacturer = (IOHIDDeviceGetProperty(device, kIOHIDManufacturerKey as CFString) as? String) ?? ""
+        let vendor = (IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? NSNumber)?.intValue ?? -1
+        let productID = (IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? NSNumber)?.intValue ?? -1
+        let serial = (IOHIDDeviceGetProperty(device, kIOHIDSerialNumberKey as CFString) as? String) ?? ""
+        return ExternalKeyboardIdentity.make(
+            vendorID: vendor,
+            productID: productID,
+            manufacturer: manufacturer,
+            product: product,
+            serial: serial
+        )
     }
 
     // MARK: - Pointer / scroll classification

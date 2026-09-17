@@ -26,6 +26,9 @@ final class HandTrackStore: ObservableObject {
     private(set) var mouseTravelBuckets: [MouseTravelMinuteBucket] = []
     private(set) var scrollBumpBuckets: [ScrollBumpMinuteBucket] = []
     private(set) var builtinKeyboardBuckets: [BuiltinKeyboardMinuteBucket] = []
+    /// Per-device external keystrokes. The lumped ``keystrokeBuckets`` series is unchanged.
+    private(set) var externalKeyboardBuckets: [ExternalKeyboardMinuteBucket] = []
+    private(set) var externalKeyboardProfiles: [String: ExternalKeyboardProfile] = [:]
     private(set) var builtinTrackpadClickBuckets: [BuiltinTrackpadClickMinuteBucket] = []
     private(set) var builtinTrackpadTravelBuckets: [BuiltinTrackpadTravelMinuteBucket] = []
     private(set) var builtinTrackpadScrollBuckets: [BuiltinTrackpadScrollMinuteBucket] = []
@@ -66,6 +69,7 @@ final class HandTrackStore: ObservableObject {
     private var dirtyMouseTravelMinutes = Set<TimeInterval>()
     private var dirtyScrollBumpMinutes = Set<TimeInterval>()
     private var dirtyBuiltinKeyboardMinutes = Set<TimeInterval>()
+    private var dirtyExternalKeyboardKeys = Set<String>()
     private var dirtyBuiltinTrackpadClickMinutes = Set<TimeInterval>()
     private var dirtyBuiltinTrackpadTravelMinutes = Set<TimeInterval>()
     private var dirtyBuiltinTrackpadScrollMinutes = Set<TimeInterval>()
@@ -76,6 +80,8 @@ final class HandTrackStore: ObservableObject {
     private var debugSaveTotalNanos: UInt64 = 0
     private var debugPublishCount = 0
     private var debugRecordCount = 0
+    private var debugSessionRecordLogCount = 0
+    private var debugSessionAttribLogCount = 0
     private static let debugLogPath = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-b2bfc5.log"
     private static let debugLogQueue = DispatchQueue(label: "HandTrack.debugStoreLog")
     // #endregion
@@ -273,6 +279,271 @@ final class HandTrackStore: ObservableObject {
         #endif
     }
 
+    func recordExternalKeyboardKeystrokes(
+        _ count: Int,
+        identity: ExternalKeyboardIdentity,
+        at timestamp: Date = Date()
+    ) {
+        guard count > 0, !identity.id.isEmpty else { return }
+        upsertExternalKeyboardProfile(identity, at: timestamp)
+        let minuteStart = timestamp.startOfMinute
+        if let last = externalKeyboardBuckets.last,
+           last.minuteStart == minuteStart,
+           last.keyboardId == identity.id
+        {
+            externalKeyboardBuckets[externalKeyboardBuckets.count - 1].keyCount += count
+        } else if let index = externalKeyboardBuckets.lastIndex(where: {
+            $0.minuteStart == minuteStart && $0.keyboardId == identity.id
+        }) {
+            externalKeyboardBuckets[index].keyCount += count
+        } else {
+            externalKeyboardBuckets.append(
+                ExternalKeyboardMinuteBucket(
+                    minuteStart: minuteStart,
+                    keyboardId: identity.id,
+                    keyCount: count
+                )
+            )
+            if externalKeyboardBuckets.last.map({ $0.minuteStart < minuteStart }) != true {
+                externalKeyboardBuckets.sort {
+                    if $0.minuteStart != $1.minuteStart { return $0.minuteStart < $1.minuteStart }
+                    return $0.keyboardId < $1.keyboardId
+                }
+            }
+        }
+        dirtyExternalKeyboardKeys.insert(Self.externalKeyboardDirtyKey(minuteStart: minuteStart, keyboardId: identity.id))
+        schedulePersistFlush()
+        #if os(macOS)
+        // Same identity just stored in `external_keyboard_minute_buckets`.
+        // The Keyboards list flashes this id so a correct highlight == correct tracking.
+        livePulse.noteExternalKeyboardDebug(
+            keyboardId: identity.id,
+            displayName: displayName(forExternalKeyboard: identity.id),
+            amount: Double(count)
+        )
+        // #region agent log
+        debugSessionRecordLogCount += 1
+        if debugSessionRecordLogCount <= 25 {
+            sessionStoreDebugLog(
+                hypothesisId: "E",
+                location: "HandTrackStore.recordExternalKeyboardKeystrokes",
+                message: "recorded_external_keyboard",
+                data: [
+                    "keyboardId": identity.id,
+                    "defaultName": identity.defaultName,
+                    "displayName": displayName(forExternalKeyboard: identity.id),
+                    "count": count,
+                ]
+            )
+        }
+        // #endregion
+        #endif
+    }
+
+    func registerExternalKeyboards(_ identities: [ExternalKeyboardIdentity], at timestamp: Date = Date()) {
+        var changed = false
+        for identity in identities where identity.id != ExternalKeyboardIdentity.unknown.id {
+            if upsertExternalKeyboardProfile(identity, at: timestamp) {
+                changed = true
+            }
+        }
+        if changed {
+            persistExternalKeyboardProfiles()
+            notifyStructuralChange()
+        }
+    }
+
+    @discardableResult
+    func setExternalKeyboardCustomName(id: String, name: String?) -> ExternalKeyboardProfile? {
+        guard var profile = externalKeyboardProfiles[id] else { return nil }
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        profile.customName = trimmed.isEmpty ? nil : trimmed
+        externalKeyboardProfiles[id] = profile
+        persistExternalKeyboardProfiles()
+        notifyStructuralChange()
+        return profile
+    }
+
+    func displayName(forExternalKeyboard id: String) -> String {
+        if let profile = externalKeyboardProfiles[id] {
+            return profile.displayName
+        }
+        if id == ExternalKeyboardIdentity.unknown.id {
+            return ExternalKeyboardIdentity.unknown.defaultName
+        }
+        return "External"
+    }
+
+    func breakdownTitle(forExternalKeyboard id: String) -> String {
+        ExternalKeyboardIdentity.keyboardTitle(displayName: displayName(forExternalKeyboard: id))
+    }
+
+    func allExternalKeyboardProfiles() -> [ExternalKeyboardProfile] {
+        let profiles = Array(externalKeyboardProfiles.values)
+        let hasRealKinesis = profiles.contains { Self.isRealKinesisProfile($0) }
+        return profiles
+            .filter { profile in
+                if hasRealKinesis, profile.id == ExternalKeyboardIdentity.assumedKinesisRGBSplit.id {
+                    return false
+                }
+                return true
+            }
+            .sorted { lhs, rhs in
+                if lhs.firstSeen != rhs.firstSeen { return lhs.firstSeen < rhs.firstSeen }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
+    /// Leftover lumped external keys (no per-device buckets) stay “External keyboard”
+    /// except today + the past 3 hand-tracking days, which display as the real Kinesis.
+    /// `unknown-external` debug/fallback buckets in that window fold into the same row.
+    /// Stored minute buckets are not rewritten.
+    func attributedExternalKeyboardKeystrokes(
+        lumpedKeystrokes: Int,
+        perKeyboard: [String: Int],
+        windowStart: Date,
+        reference: Date = Date()
+    ) -> [(id: String, keystrokes: Int)] {
+        let attributed = perKeyboard.values.reduce(0, +)
+        let leftover = max(0, lumpedKeystrokes - attributed)
+        var merged = perKeyboard
+        let foldIntoKinesis = Self.isAssumedKinesisDisplayWindow(windowStart: windowStart, reference: reference)
+        let unknownCount = merged[ExternalKeyboardIdentity.unknown.id] ?? 0
+        let kinesisID = kinesisDisplayKeyboardID()
+        if foldIntoKinesis {
+            if unknownCount > 0 {
+                merged.removeValue(forKey: ExternalKeyboardIdentity.unknown.id)
+                merged[kinesisID, default: 0] += unknownCount
+            }
+            if kinesisID != ExternalKeyboardIdentity.assumedKinesisRGBSplit.id,
+               let assumedCount = merged.removeValue(forKey: ExternalKeyboardIdentity.assumedKinesisRGBSplit.id),
+               assumedCount > 0
+            {
+                merged[kinesisID, default: 0] += assumedCount
+            }
+            if leftover > 0 {
+                merged[kinesisID, default: 0] += leftover
+            }
+        } else if leftover > 0 {
+            merged[ExternalKeyboardIdentity.unknown.id, default: 0] += leftover
+        }
+        // #region agent log
+        debugSessionAttribLogCount += 1
+        if debugSessionAttribLogCount <= 20 {
+            sessionStoreDebugLog(
+                hypothesisId: "F",
+                location: "HandTrackStore.attributedExternalKeyboardKeystrokes",
+                message: "bar_breakdown_attrib",
+                data: [
+                    "foldIntoKinesis": foldIntoKinesis,
+                    "leftover": leftover,
+                    "unknownCount": unknownCount,
+                    "kinesisID": kinesisID,
+                    "rowIds": merged.filter { $0.value > 0 }.map(\.key).sorted(),
+                    "lumped": lumpedKeystrokes,
+                    "attributed": attributed,
+                ]
+            )
+        }
+        // #endregion
+        return merged
+            .filter { $0.value > 0 }
+            .map { (id: $0.key, keystrokes: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.keystrokes != rhs.keystrokes { return lhs.keystrokes > rhs.keystrokes }
+                return displayName(forExternalKeyboard: lhs.id)
+                    .localizedCaseInsensitiveCompare(displayName(forExternalKeyboard: rhs.id)) == .orderedAscending
+            }
+    }
+
+    @discardableResult
+    private func upsertExternalKeyboardProfile(
+        _ identity: ExternalKeyboardIdentity,
+        at timestamp: Date
+    ) -> Bool {
+        guard identity.id != ExternalKeyboardIdentity.unknown.id else { return false }
+        guard identity.id != ExternalKeyboardIdentity.macbookBuiltin.id else { return false }
+        if var existing = externalKeyboardProfiles[identity.id] {
+            var changed = false
+            if timestamp.timeIntervalSince(existing.lastSeen) >= 3600 {
+                existing.lastSeen = timestamp
+                changed = true
+            }
+            if existing.defaultName.isEmpty, !identity.defaultName.isEmpty {
+                existing.defaultName = identity.defaultName
+                changed = true
+            }
+            if existing.manufacturer.isEmpty, !identity.manufacturer.isEmpty {
+                existing.manufacturer = identity.manufacturer
+                changed = true
+            }
+            if existing.product.isEmpty, !identity.product.isEmpty {
+                existing.product = identity.product
+                changed = true
+            }
+            if changed {
+                externalKeyboardProfiles[identity.id] = existing
+                persistExternalKeyboardProfiles()
+            }
+            return changed
+        }
+        externalKeyboardProfiles[identity.id] = ExternalKeyboardProfile(identity: identity, at: timestamp)
+        persistExternalKeyboardProfiles()
+        notifyStructuralChange()
+        return true
+    }
+
+    private func kinesisDisplayKeyboardID() -> String {
+        if let real = externalKeyboardProfiles.values.first(where: { Self.isRealKinesisProfile($0) }) {
+            return real.id
+        }
+        if let match = externalKeyboardProfiles.values.first(where: { profile in
+            profile.id == ExternalKeyboardIdentity.assumedKinesisRGBSplit.id
+                || profile.displayName.localizedCaseInsensitiveContains("kinesis")
+                || profile.defaultName.localizedCaseInsensitiveContains("kinesis")
+                || profile.product.localizedCaseInsensitiveContains("kinesis")
+                || profile.manufacturer.localizedCaseInsensitiveContains("kinesis")
+        }) {
+            return match.id
+        }
+        return ExternalKeyboardIdentity.assumedKinesisRGBSplit.id
+    }
+
+    private static func isRealKinesisProfile(_ profile: ExternalKeyboardProfile) -> Bool {
+        guard profile.id != ExternalKeyboardIdentity.assumedKinesisRGBSplit.id else { return false }
+        return profile.displayName.localizedCaseInsensitiveContains("kinesis")
+            || profile.defaultName.localizedCaseInsensitiveContains("kinesis")
+            || profile.product.localizedCaseInsensitiveContains("kinesis")
+            || profile.manufacturer.localizedCaseInsensitiveContains("kinesis")
+    }
+
+    private static func isAssumedKinesisDisplayWindow(windowStart: Date, reference: Date) -> Bool {
+        let today = reference.startOfHandTrackingDay
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: today) else {
+            return windowStart >= today
+        }
+        return windowStart >= cutoff
+    }
+
+    private func ensureAssumedKinesisRGBSplitProfile() {
+        if externalKeyboardProfiles.values.contains(where: { Self.isRealKinesisProfile($0) }) {
+            return
+        }
+        let identity = ExternalKeyboardIdentity.assumedKinesisRGBSplit
+        guard externalKeyboardProfiles[identity.id] == nil else { return }
+        let now = Date()
+        externalKeyboardProfiles[identity.id] = ExternalKeyboardProfile(
+            identity: identity,
+            at: now,
+            customName: "Kinesis RGB Split"
+        )
+        persistExternalKeyboardProfiles()
+    }
+
+    private static func externalKeyboardDirtyKey(minuteStart: Date, keyboardId: String) -> String {
+        "\(minuteStart.timeIntervalSince1970)|\(keyboardId)"
+    }
+
     func recordBuiltinKeystrokes(_ count: Int, at timestamp: Date = Date()) {
         guard count > 0 else { return }
         let minuteStart = timestamp.startOfMinute
@@ -287,6 +558,11 @@ final class HandTrackStore: ObservableObject {
         publishLiveKind(.builtinKeystrokes, deferForScrollTravel: false)
         #if os(macOS)
         livePulse.noteDebug(.builtinKeystrokes, amount: Double(count))
+        livePulse.noteExternalKeyboardDebug(
+            keyboardId: ExternalKeyboardIdentity.macbookBuiltin.id,
+            displayName: ExternalKeyboardIdentity.macbookBuiltin.defaultName,
+            amount: Double(count)
+        )
         #endif
     }
 
@@ -473,6 +749,13 @@ final class HandTrackStore: ObservableObject {
             let minute = Date(timeIntervalSince1970: epoch)
             return builtinKeyboardBuckets.first { $0.minuteStart == minute }
         }
+        let externalKeyboards: [ExternalKeyboardMinuteBucket] = dirtyExternalKeyboardKeys.compactMap { key in
+            let parts = key.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2, let epoch = TimeInterval(parts[0]) else { return nil }
+            let minute = Date(timeIntervalSince1970: epoch)
+            let keyboardId = String(parts[1])
+            return externalKeyboardBuckets.first { $0.minuteStart == minute && $0.keyboardId == keyboardId }
+        }
         let builtinClicks: [BuiltinTrackpadClickMinuteBucket] = dirtyBuiltinTrackpadClickMinutes.compactMap { epoch in
             let minute = Date(timeIntervalSince1970: epoch)
             return builtinTrackpadClickBuckets.first { $0.minuteStart == minute }
@@ -488,12 +771,14 @@ final class HandTrackStore: ObservableObject {
         let dirtyCount =
             keystrokes.count + mouseClicks.count + mouseTravel.count + scrollBumps.count
             + builtinKeys.count + builtinClicks.count + builtinTravel.count + builtinScroll.count
+            + externalKeyboards.count
 
         dirtyKeystrokeMinutes.removeAll(keepingCapacity: true)
         dirtyMouseClickMinutes.removeAll(keepingCapacity: true)
         dirtyMouseTravelMinutes.removeAll(keepingCapacity: true)
         dirtyScrollBumpMinutes.removeAll(keepingCapacity: true)
         dirtyBuiltinKeyboardMinutes.removeAll(keepingCapacity: true)
+        dirtyExternalKeyboardKeys.removeAll(keepingCapacity: true)
         dirtyBuiltinTrackpadClickMinutes.removeAll(keepingCapacity: true)
         dirtyBuiltinTrackpadTravelMinutes.removeAll(keepingCapacity: true)
         dirtyBuiltinTrackpadScrollMinutes.removeAll(keepingCapacity: true)
@@ -508,6 +793,7 @@ final class HandTrackStore: ObservableObject {
         for bucket in mouseTravel { saveMouseTravel(bucket) }
         for bucket in scrollBumps { saveScrollBump(bucket) }
         for bucket in builtinKeys { saveBuiltinKeyboard(bucket) }
+        for bucket in externalKeyboards { saveExternalKeyboardBucket(bucket) }
         for bucket in builtinClicks { saveBuiltinTrackpadClick(bucket) }
         for bucket in builtinTravel { saveBuiltinTrackpadTravel(bucket) }
         for bucket in builtinScroll { saveBuiltinTrackpadScroll(bucket) }
@@ -741,6 +1027,39 @@ final class HandTrackStore: ObservableObject {
               let line = String(data: json, encoding: .utf8)
         else { return }
         let path = Self.debugLogPath
+        Self.debugLogQueue.async {
+            if !FileManager.default.fileExists(atPath: path) {
+                FileManager.default.createFile(atPath: path, contents: nil)
+            }
+            guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return }
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            if let bytes = (line + "\n").data(using: .utf8) {
+                try? handle.write(contentsOf: bytes)
+            }
+        }
+    }
+
+    private func sessionStoreDebugLog(
+        hypothesisId: String,
+        location: String,
+        message: String,
+        data: [String: Any] = [:]
+    ) {
+        var payload: [String: Any] = [
+            "sessionId": "869910",
+            "runId": "pre-fix",
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "message": message,
+            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+            "data": data,
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let json = try? JSONSerialization.data(withJSONObject: payload),
+              let line = String(data: json, encoding: .utf8)
+        else { return }
+        let path = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-869910.log"
         Self.debugLogQueue.async {
             if !FileManager.default.fileExists(atPath: path) {
                 FileManager.default.createFile(atPath: path, contents: nil)
@@ -1089,7 +1408,8 @@ final class HandTrackStore: ObservableObject {
                     builtinKeystrokeCount: agg.builtinKeystrokeCount,
                     builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
                     builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
-                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels,
+                    externalKeyboardKeystrokes: agg.externalKeyboardKeystrokes
                 )
             )
         }
@@ -1119,7 +1439,8 @@ final class HandTrackStore: ObservableObject {
                     builtinKeystrokeCount: agg.builtinKeystrokeCount,
                     builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
                     builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
-                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels,
+                    externalKeyboardKeystrokes: agg.externalKeyboardKeystrokes
                 )
             )
         }
@@ -1152,7 +1473,8 @@ final class HandTrackStore: ObservableObject {
                     builtinKeystrokeCount: agg.builtinKeystrokeCount,
                     builtinTrackpadClickCount: agg.builtinTrackpadClickCount,
                     builtinTrackpadTravelPixels: agg.builtinTrackpadTravelPixels,
-                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels
+                    builtinTrackpadScrollPixels: agg.builtinTrackpadScrollPixels,
+                    externalKeyboardKeystrokes: agg.externalKeyboardKeystrokes
                 )
             )
         }
@@ -1247,6 +1569,7 @@ final class HandTrackStore: ObservableObject {
         var builtinTrackpadClickCount = 0
         var builtinTrackpadTravelPixels = 0.0
         var builtinTrackpadScrollPixels = 0.0
+        var externalKeyboardKeystrokes: [String: Int] = [:]
     }
 
     private func aggregateComputerUsage(from start: Date, to end: Date) -> ComputerUsageAggregate {
@@ -1274,6 +1597,9 @@ final class HandTrackStore: ObservableObject {
         }
         for bucket in builtinTrackpadScrollBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
             agg.builtinTrackpadScrollPixels += bucket.scrollPixels
+        }
+        for bucket in externalKeyboardBuckets where bucket.minuteStart >= start && bucket.minuteStart < end {
+            agg.externalKeyboardKeystrokes[bucket.keyboardId, default: 0] += bucket.keyCount
         }
         return agg
     }
@@ -1565,10 +1891,13 @@ final class HandTrackStore: ObservableObject {
             mouseTravelBuckets = try loadMouseTravelBuckets()
             scrollBumpBuckets = try loadScrollBumpBuckets()
             builtinKeyboardBuckets = try loadBuiltinKeyboardBuckets()
+            externalKeyboardBuckets = try loadExternalKeyboardBuckets()
+            externalKeyboardProfiles = try loadExternalKeyboardProfiles()
             builtinTrackpadClickBuckets = try loadBuiltinTrackpadClickBuckets()
             builtinTrackpadTravelBuckets = try loadBuiltinTrackpadTravelBuckets()
             builtinTrackpadScrollBuckets = try loadBuiltinTrackpadScrollBuckets()
             try rebuildDailyPainRollupsFromHourlyLogs()
+            ensureAssumedKinesisRGBSplitProfile()
         } catch {
             hourlyLogs = []
             keystrokeBuckets = []
@@ -1576,12 +1905,15 @@ final class HandTrackStore: ObservableObject {
             mouseTravelBuckets = []
             scrollBumpBuckets = []
             builtinKeyboardBuckets = []
+            externalKeyboardBuckets = []
+            externalKeyboardProfiles = [:]
             builtinTrackpadClickBuckets = []
             builtinTrackpadTravelBuckets = []
             builtinTrackpadScrollBuckets = []
             dailyPainRollups = []
             dailyPainRollupSnapshots = [:]
             print("Failed to load HandTrack data: \(error)")
+            ensureAssumedKinesisRGBSplitProfile()
         }
         notifyStructuralChange()
     }
@@ -1641,6 +1973,30 @@ final class HandTrackStore: ObservableObject {
         CREATE TABLE IF NOT EXISTS builtin_keyboard_minute_buckets (
             minute_start REAL PRIMARY KEY,
             key_count INTEGER NOT NULL
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS external_keyboard_minute_buckets (
+            minute_start REAL NOT NULL,
+            keyboard_id TEXT NOT NULL,
+            key_count INTEGER NOT NULL,
+            PRIMARY KEY (minute_start, keyboard_id)
+        );
+        """)
+
+        try execute("""
+        CREATE TABLE IF NOT EXISTS external_keyboards (
+            id TEXT PRIMARY KEY,
+            vendor_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            manufacturer TEXT NOT NULL,
+            product TEXT NOT NULL,
+            serial TEXT NOT NULL,
+            default_name TEXT NOT NULL,
+            custom_name TEXT,
+            first_seen REAL NOT NULL,
+            last_seen REAL NOT NULL
         );
         """)
 
@@ -2031,6 +2387,94 @@ final class HandTrackStore: ObservableObject {
                 bumpCount: Int(sqlite3_column_int(statement, 1))
             )
         }
+    }
+
+    private func saveExternalKeyboardBucket(_ bucket: ExternalKeyboardMinuteBucket) {
+        do {
+            try withStatement("""
+            INSERT OR REPLACE INTO external_keyboard_minute_buckets (minute_start, keyboard_id, key_count)
+            VALUES (?, ?, ?);
+            """) { statement in
+                sqlite3_bind_double(statement, 1, bucket.minuteStart.timeIntervalSince1970)
+                bindText(bucket.keyboardId, to: statement, at: 2)
+                sqlite3_bind_int(statement, 3, Int32(bucket.keyCount))
+                if sqlite3_step(statement) != SQLITE_DONE {
+                    throw StoreError.sqlite(message: lastSQLiteError)
+                }
+            }
+        } catch {
+            print("Failed to save external keyboard bucket: \(error)")
+        }
+    }
+
+    private func loadExternalKeyboardBuckets() throws -> [ExternalKeyboardMinuteBucket] {
+        try query("""
+        SELECT minute_start, keyboard_id, key_count
+        FROM external_keyboard_minute_buckets
+        ORDER BY minute_start ASC, keyboard_id ASC;
+        """) { statement in
+            ExternalKeyboardMinuteBucket(
+                minuteStart: Date(timeIntervalSince1970: sqlite3_column_double(statement, 0)),
+                keyboardId: columnText(statement, at: 1),
+                keyCount: Int(sqlite3_column_int(statement, 2))
+            )
+        }
+    }
+
+    private func persistExternalKeyboardProfiles() {
+        do {
+            for profile in externalKeyboardProfiles.values {
+                try withStatement("""
+                INSERT OR REPLACE INTO external_keyboards (
+                    id, vendor_id, product_id, manufacturer, product, serial,
+                    default_name, custom_name, first_seen, last_seen
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """) { statement in
+                    bindText(profile.id, to: statement, at: 1)
+                    sqlite3_bind_int(statement, 2, Int32(profile.vendorID))
+                    sqlite3_bind_int(statement, 3, Int32(profile.productID))
+                    bindText(profile.manufacturer, to: statement, at: 4)
+                    bindText(profile.product, to: statement, at: 5)
+                    bindText(profile.serial, to: statement, at: 6)
+                    bindText(profile.defaultName, to: statement, at: 7)
+                    if let custom = profile.customName, !custom.isEmpty {
+                        bindText(custom, to: statement, at: 8)
+                    } else {
+                        sqlite3_bind_null(statement, 8)
+                    }
+                    sqlite3_bind_double(statement, 9, profile.firstSeen.timeIntervalSince1970)
+                    sqlite3_bind_double(statement, 10, profile.lastSeen.timeIntervalSince1970)
+                    if sqlite3_step(statement) != SQLITE_DONE {
+                        throw StoreError.sqlite(message: lastSQLiteError)
+                    }
+                }
+            }
+        } catch {
+            print("Failed to save external keyboard profiles: \(error)")
+        }
+    }
+
+    private func loadExternalKeyboardProfiles() throws -> [String: ExternalKeyboardProfile] {
+        let rows: [ExternalKeyboardProfile] = try query("""
+        SELECT id, vendor_id, product_id, manufacturer, product, serial,
+               default_name, custom_name, first_seen, last_seen
+        FROM external_keyboards;
+        """) { statement in
+            let custom = columnText(statement, at: 7)
+            return ExternalKeyboardProfile(
+                id: columnText(statement, at: 0),
+                vendorID: Int(sqlite3_column_int(statement, 1)),
+                productID: Int(sqlite3_column_int(statement, 2)),
+                manufacturer: columnText(statement, at: 3),
+                product: columnText(statement, at: 4),
+                serial: columnText(statement, at: 5),
+                defaultName: columnText(statement, at: 6),
+                customName: custom.isEmpty ? nil : custom,
+                firstSeen: Date(timeIntervalSince1970: sqlite3_column_double(statement, 8)),
+                lastSeen: Date(timeIntervalSince1970: sqlite3_column_double(statement, 9))
+            )
+        }
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
     }
 
     private func saveBuiltinKeyboard(_ bucket: BuiltinKeyboardMinuteBucket) {

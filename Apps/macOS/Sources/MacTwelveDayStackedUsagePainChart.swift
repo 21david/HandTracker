@@ -702,6 +702,7 @@ private func twelveDayColumnUsageMinutes(
 
 private struct TwelveDayColumnContextMenuOverlay: View {
     let slots: [ComputerUsageDaySlot]
+    let store: HandTrackStore
     let workloadRates: MacEstimatedWorkloadMinutes.Rates
     let gap: Double
     let chartProxy: ChartProxy
@@ -731,7 +732,14 @@ private struct TwelveDayColumnContextMenuOverlay: View {
                     mouseMinutes: minutes.mouse,
                     macbookKeyboardMinutes: minutes.macbookKeyboard,
                     macbookTrackpadMinutes: minutes.macbookTrackpad,
-                    handTrackingDayStart: slot.dayStart
+                    handTrackingDayStart: slot.dayStart,
+                    keyboardRows: MacExternalKeyboardBreakdown.rows(
+                        store: store,
+                        lumpedKeystrokes: slot.keystrokeCount,
+                        perKeyboard: slot.externalKeyboardKeystrokes,
+                        windowStart: slot.dayStart,
+                        rates: workloadRates
+                    )
                 )
             }
             MacUsageBreakdownRightClickLayer(regions: regions)
@@ -891,6 +899,7 @@ private struct TwelveDayBarCenterDayLabelsOverlay: View {
 
 /// Owns `Chart { … }` plus axis/scales — keeps ``TwelveDayPainChartPanel`` from inheriting giant `some View` composition.
 private struct TwelveDayPainChartSurface: View {
+    let store: HandTrackStore
     let slots: [ComputerUsageDaySlot]
     let stackLayers: [DayStackLayer]
     let workloadRates: MacEstimatedWorkloadMinutes.Rates
@@ -979,6 +988,7 @@ private struct TwelveDayPainChartSurface: View {
                     TwelveDayBarCenterDayLabelsOverlay(slots: slots, chartProxy: proxy, geometry: geometry)
                     TwelveDayColumnContextMenuOverlay(
                         slots: slots,
+                        store: store,
                         workloadRates: workloadRates,
                         gap: gap,
                         chartProxy: proxy,
@@ -993,6 +1003,7 @@ private struct TwelveDayPainChartSurface: View {
 // MARK: - Chart panel
 
 private struct TwelveDayPainChartPanel: View {
+    let store: HandTrackStore
     let prepared: TwelveDayPainPrepared
     var painVisibility: TwelveDayPainVisibility
     let workloadRates: MacEstimatedWorkloadMinutes.Rates
@@ -1013,6 +1024,7 @@ private struct TwelveDayPainChartPanel: View {
 
     private var chartBody: some View {
         TwelveDayPainChartSurface(
+            store: store,
             slots: slots,
             stackLayers: prepared.stackLayers,
             workloadRates: workloadRates,
@@ -1364,6 +1376,7 @@ private struct MacTwelveDayStackedUsagePainChartFrame: View, Equatable {
             }
 
             TwelveDayPainChartPanel(
+                store: store,
                 prepared: prepared,
                 painVisibility: painVisibility,
                 workloadRates: .fromUserDefaults()

@@ -597,6 +597,7 @@ private func twelveHourColumnUsageMinutes(
 
 private struct TwelveHourColumnContextMenuOverlay: View {
     let slots: [ComputerUsageHourSlot]
+    let store: HandTrackStore
     let chartProxy: ChartProxy
     let geometry: GeometryProxy
 
@@ -621,6 +622,7 @@ private struct TwelveHourColumnContextMenuOverlay: View {
                       let yTop = chartProxy.position(for: (x: centerXData, y: TwelveHourCombinedChart.chartUsageAxisMax))
                 else { return nil }
                 let minutes = twelveHourColumnUsageMinutes(slot: slot)
+                let rates = MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
                 return MacUsageBreakdownHitRegion(
                     frame: CGRect(
                         x: plotBounds.origin.x + min(xStart.x, xEnd.x),
@@ -631,7 +633,14 @@ private struct TwelveHourColumnContextMenuOverlay: View {
                     keyboardMinutes: minutes.keyboard,
                     mouseMinutes: minutes.mouse,
                     macbookKeyboardMinutes: minutes.macbookKeyboard,
-                    macbookTrackpadMinutes: minutes.macbookTrackpad
+                    macbookTrackpadMinutes: minutes.macbookTrackpad,
+                    keyboardRows: MacExternalKeyboardBreakdown.rows(
+                        store: store,
+                        lumpedKeystrokes: slot.keystrokeCount,
+                        perKeyboard: slot.externalKeyboardKeystrokes,
+                        windowStart: slot.hourStart,
+                        rates: rates
+                    )
                 )
             }
             MacUsageBreakdownRightClickLayer(regions: regions)
@@ -642,6 +651,7 @@ private struct TwelveHourColumnContextMenuOverlay: View {
 // MARK: - Chart panel (narrow `some View` inference)
 
 private struct TwelveHourUsageChartPanel: View {
+    let store: HandTrackStore
     let prepared: TwelveHourUsagePrepared
     let painVisibility: TwelveHourPainVisibility
     var chartHeight: CGFloat = 276
@@ -702,6 +712,7 @@ private struct TwelveHourUsageChartPanel: View {
             GeometryReader { geometry in
                 TwelveHourColumnContextMenuOverlay(
                     slots: slots,
+                    store: store,
                     chartProxy: proxy,
                     geometry: geometry
                 )
@@ -1084,6 +1095,7 @@ private struct MacTwelveHourStackedUsagePainChartFrame: View, Equatable {
             }
 
             TwelveHourUsageChartPanel(
+                store: store,
                 prepared: prepared,
                 painVisibility: painVisibility,
                 chartHeight: chartHeight

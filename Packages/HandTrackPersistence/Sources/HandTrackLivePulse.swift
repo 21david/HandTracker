@@ -61,15 +61,41 @@ final class HandTrackLivePulse {
 
     /// Set while the debug panel is open. `noteDebug` is a no-op otherwise (avoids main-thread churn).
     static var debugPanelActive = false
+    /// Set while the Keyboards settings list is open so rows can flash on each key.
+    static var keyboardSettingsActive = false
 
     /// Monotonic id; debug UI observes this to flash tiles on every raw input.
     private(set) var debugTickID: UInt64 = 0
     private(set) var lastDebugTick: DebugTick?
+
+    struct ExternalKeyboardDebugTick: Equatable {
+        var keyboardId: String
+        var displayName: String
+        var amount: Double
+        var id: UInt64
+    }
+
+    private(set) var externalKeyboardDebugTickID: UInt64 = 0
+    private(set) var lastExternalKeyboardDebugTick: ExternalKeyboardDebugTick?
 
     /// Call from each `record*` path so debug flashes track every keystroke/click, not coalesced UI publishes.
     func noteDebug(_ kind: Kind, amount: Double = 1) {
         guard Self.debugPanelActive, amount.isFinite, amount > 0 else { return }
         debugTickID &+= 1
         lastDebugTick = DebugTick(kind: kind, amount: amount, id: debugTickID)
+    }
+
+    /// Fired from ``HandTrackStore/recordExternalKeyboardKeystrokes`` with the same
+    /// device id that was just written to the per-keyboard buckets.
+    func noteExternalKeyboardDebug(keyboardId: String, displayName: String, amount: Double = 1) {
+        guard Self.keyboardSettingsActive else { return }
+        guard amount.isFinite, amount > 0, !keyboardId.isEmpty else { return }
+        externalKeyboardDebugTickID &+= 1
+        lastExternalKeyboardDebugTick = ExternalKeyboardDebugTick(
+            keyboardId: keyboardId,
+            displayName: displayName,
+            amount: amount,
+            id: externalKeyboardDebugTickID
+        )
     }
 }

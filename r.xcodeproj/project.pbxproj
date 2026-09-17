@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -44,6 +44,7 @@
 		8627EABD9D48737E85AA4030 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79D1EDDB2E9FE5F6ADF77E1D /* Assets.xcassets */; };
 		883FF426E00CB425F5E9A410 /* MacLiveUsageBucketResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADD26EB622BE103632EA4E9 /* MacLiveUsageBucketResolution.swift */; };
 		8A8B5BE592842B541B7C3D97 /* HandTrackLivePulse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */; };
+		8E22276E9DC76C3A596507FD /* MacExternalKeyboardsSettingsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309FB4D5693EAFBD707350C0 /* MacExternalKeyboardsSettingsPopover.swift */; };
 		9219C116395E5AC15AE16D4E /* MacMutePauseControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 234C3348DD15D675777BB7E2 /* MacMutePauseControls.swift */; };
 		94975FEC01CE080DAA04D304 /* MacAgentDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */; };
 		9ADAD15CF5A1F83C733FC4F8 /* MacActivityBreakBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643AEF8B074D5151DFD602F7 /* MacActivityBreakBanner.swift */; };
@@ -72,6 +73,7 @@
 		210FC7EE20FD002266614326 /* HandTrackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackModels.swift; sourceTree = "<group>"; };
 		234C3348DD15D675777BB7E2 /* MacMutePauseControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMutePauseControls.swift; sourceTree = "<group>"; };
 		2D5EF1645EA336F4898E2D73 /* HandTrackSyncServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackSyncServer.swift; sourceTree = "<group>"; };
+		309FB4D5693EAFBD707350C0 /* MacExternalKeyboardsSettingsPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacExternalKeyboardsSettingsPopover.swift; sourceTree = "<group>"; };
 		363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandTrackLivePulse.swift; sourceTree = "<group>"; };
 		38DBF8A4A517DC716B122A7D /* MacTwelveWeekStackedUsagePainChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTwelveWeekStackedUsagePainChart.swift; sourceTree = "<group>"; };
 		3ADCBC1F236A695C63AB0836 /* MacHistoricalPlotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHistoricalPlotsView.swift; sourceTree = "<group>"; };
@@ -106,7 +108,7 @@
 		C2781108EDDF110EBCCE2BB6 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		C5AB58E9FA3A8AF21B4019F2 /* MacDashboardScrollGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDashboardScrollGate.swift; sourceTree = "<group>"; };
 		C847C20B412C32495622F5D9 /* MacGraphsDebugModePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacGraphsDebugModePanel.swift; sourceTree = "<group>"; };
-		C993793EFEC2290D4EA10C0D /* HandTrackiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C993793EFEC2290D4EA10C0D /* HandTrackiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HandTrackiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D498B412AB2B2C0CC0DB1CF4 /* iOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSContentView.swift; sourceTree = "<group>"; };
 		DC7FC7DE6A5E3B5677CFBDF4 /* MacUsageBarBreakdownContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUsageBarBreakdownContextMenu.swift; sourceTree = "<group>"; };
 		E025F825256962950A81F69B /* MacBuiltinKeyboardFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinKeyboardFiveMinuteChart.swift; sourceTree = "<group>"; };
@@ -247,6 +249,7 @@
 				E47B6232BBFA6B28AC8532DF /* MacDashboardViewModel.swift */,
 				A45AE0EE4D51075B5EF85A7B /* MacDayHourlyUsageDetailView.swift */,
 				71E10430186DA1BA531C37E6 /* MacEstimatedWorkloadMinutes.swift */,
+				309FB4D5693EAFBD707350C0 /* MacExternalKeyboardsSettingsPopover.swift */,
 				016AACB9CA488A3DB496E1BA /* MacFiveMinuteBarStyle.swift */,
 				C847C20B412C32495622F5D9 /* MacGraphsDebugModePanel.swift */,
 				6E7382A7F28244C89A3A4FE7 /* MacHistoricalPlotRenderer.swift */,
@@ -335,6 +338,7 @@
 						ProvisioningStyle = Manual;
 					};
 					A467F42477BE834FE6393981 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -349,6 +353,7 @@
 			);
 			mainGroup = 5A0E54313FF2E74CA33D883D;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -405,6 +410,7 @@
 				6D1B7127809C56A5C4B08EC5 /* MacDashboardViewModel.swift in Sources */,
 				2E5A05829FFCC9B27B67523B /* MacDayHourlyUsageDetailView.swift in Sources */,
 				D2B08AE6F78B9A135E4B9075 /* MacEstimatedWorkloadMinutes.swift in Sources */,
+				8E22276E9DC76C3A596507FD /* MacExternalKeyboardsSettingsPopover.swift in Sources */,
 				ACD435F02FEABA0B91B18B56 /* MacFiveMinuteBarStyle.swift in Sources */,
 				259B8FD60712218219EACE53 /* MacGraphsDebugModePanel.swift in Sources */,
 				FF3FE88A21A644BC39F78C43 /* MacHistoricalPlotRenderer.swift in Sources */,
@@ -450,7 +456,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -484,7 +489,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = MJ6UJ6MF3K;
 				INFOPLIST_FILE = Apps/iOS/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

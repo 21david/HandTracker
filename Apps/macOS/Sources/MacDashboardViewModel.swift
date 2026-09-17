@@ -123,6 +123,14 @@ final class MacDashboardViewModel: ObservableObject {
         monitor.onKeystroke = { [weak self] in
             self?.enqueueDiscreteInput(\.externalKeys)
         }
+        monitor.onExternalKeyboardKeystroke = { [weak self] identity in
+            self?.enqueueExternalKeyboard(identity)
+        }
+        monitor.onExternalKeyboardInventory = { [weak store] identities in
+            Task { @MainActor in
+                store?.registerExternalKeyboards(identities)
+            }
+        }
         monitor.onMouseClick = { [weak self] in
             self?.enqueueDiscreteInput(\.mouseClicks)
         }
@@ -184,6 +192,16 @@ final class MacDashboardViewModel: ObservableObject {
     nonisolated private func enqueueDiscreteInput(_ keyPath: WritableKeyPath<PendingDiscreteInputBuffer.Counters, Int>) {
         let shouldSchedule = pendingDiscrete.increment(keyPath)
         guard shouldSchedule else { return }
+        scheduleDiscreteFlush()
+    }
+
+    nonisolated private func enqueueExternalKeyboard(_ identity: ExternalKeyboardIdentity) {
+        let shouldSchedule = pendingDiscrete.incrementExternalKeyboard(identity)
+        guard shouldSchedule else { return }
+        scheduleDiscreteFlush()
+    }
+
+    nonisolated private func scheduleDiscreteFlush() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             self?.flushPendingDiscreteInput()
         }
@@ -192,7 +210,11 @@ final class MacDashboardViewModel: ObservableObject {
     private func flushPendingDiscreteInput() {
         let batch = pendingDiscrete.take()
         guard let store else { return }
-        guard batch.externalKeys > 0 || batch.builtinKeys > 0 || batch.mouseClicks > 0 else { return }
+        guard batch.externalKeys > 0
+            || batch.builtinKeys > 0
+            || batch.mouseClicks > 0
+            || !batch.externalByKeyboard.isEmpty
+        else { return }
 
         let now = Date()
         // #region agent log
@@ -213,6 +235,9 @@ final class MacDashboardViewModel: ObservableObject {
         if batch.externalKeys > 0 {
             store.recordKeystrokes(batch.externalKeys, at: now)
             applyActivityLimit(for: .keystrokes, eventCount: batch.externalKeys, at: now)
+        }
+        for (identity, count) in batch.externalByKeyboard where count > 0 {
+            store.recordExternalKeyboardKeystrokes(count, identity: identity, at: now)
         }
         if batch.builtinKeys > 0 {
             store.recordBuiltinKeystrokes(batch.builtinKeys, at: now)
@@ -318,6 +343,7 @@ private final class PendingDiscreteInputBuffer: @unchecked Sendable {
         var externalKeys = 0
         var builtinKeys = 0
         var mouseClicks = 0
+        var externalByKeyboard: [(identity: ExternalKeyboardIdentity, count: Int)] = []
     }
 
     private let lock = NSLock()
@@ -334,11 +360,27 @@ private final class PendingDiscreteInputBuffer: @unchecked Sendable {
         return true
     }
 
+    private var pendingExternalByID: [String: (identity: ExternalKeyboardIdentity, count: Int)] = [:]
+
+    func incrementExternalKeyboard(_ identity: ExternalKeyboardIdentity) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        var current = pendingExternalByID[identity.id] ?? (identity, 0)
+        current.identity = identity
+        current.count += 1
+        pendingExternalByID[identity.id] = current
+        if flushScheduled { return false }
+        flushScheduled = true
+        return true
+    }
+
     func take() -> Counters {
         lock.lock()
         defer { lock.unlock() }
-        let batch = counters
+        var batch = counters
+        batch.externalByKeyboard = Array(pendingExternalByID.values)
         counters = Counters()
+        pendingExternalByID.removeAll(keepingCapacity: true)
         flushScheduled = false
         return batch
     }

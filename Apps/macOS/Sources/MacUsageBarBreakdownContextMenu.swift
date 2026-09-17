@@ -60,8 +60,14 @@ private enum MacUsageBreakdownPopupLayout {
     static let screenEdgeMargin: CGFloat = 8
 }
 
+struct MacUsageBreakdownKeyboardRow: Identifiable, Equatable {
+    var id: String
+    var title: String
+    var minutes: Int
+}
+
 private struct MacUsageBreakdownPopupView: View {
-    let keyboardMinutes: Int
+    let keyboardRows: [MacUsageBreakdownKeyboardRow]
     let mouseMinutes: Int
     let macbookKeyboardMinutes: Int?
     let macbookTrackpadMinutes: Int?
@@ -77,21 +83,11 @@ private struct MacUsageBreakdownPopupView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Reserve trailing room for ✕ on the first line only so dividers stay full-width.
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                row(prefix: "External keyboard", minutes: keyboardMinutes)
+                keyboardBlock
                 Color.clear.frame(width: 16, height: 1)
             }
-            row(prefix: "External mouse", minutes: mouseMinutes)
-
-            if macbookKeyboardMinutes != nil || macbookTrackpadMinutes != nil {
-                rule
-                if let macbookKeyboardMinutes {
-                    row(prefix: "MacBook keyboard", minutes: macbookKeyboardMinutes)
-                }
-                if let macbookTrackpadMinutes {
-                    row(prefix: "MacBook trackpad", minutes: macbookTrackpadMinutes)
-                }
-            }
-
+            rule
+            pointingBlock
             rule
             row(prefix: "Total", minutes: totalMinutes)
 
@@ -139,6 +135,26 @@ private struct MacUsageBreakdownPopupView: View {
             .frame(maxWidth: .infinity)
     }
 
+    private var keyboardBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let macbookKeyboardMinutes {
+                row(prefix: "MacBook keyboard", minutes: macbookKeyboardMinutes)
+            }
+            ForEach(keyboardRows) { keyboard in
+                row(prefix: keyboard.title, minutes: keyboard.minutes)
+            }
+        }
+    }
+
+    private var pointingBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            row(prefix: "External mouse", minutes: mouseMinutes)
+            if let macbookTrackpadMinutes {
+                row(prefix: "MacBook trackpad", minutes: macbookTrackpadMinutes)
+            }
+        }
+    }
+
     private func row(prefix: String, minutes: Int) -> some View {
         Button {
             onSelect(minutes)
@@ -166,7 +182,8 @@ final class MacUsageBreakdownPopupPresenter {
     private var escapeLocalMonitor: Any?
     private var escapeGlobalMonitor: Any?
 
-    /// MacBook rows appear only when each is ≥ 5 minutes; omit both + their divider when neither qualifies.
+    /// MacBook keyboard/trackpad rows appear only when each is ≥ 5 minutes.
+    /// Divider is keyboards vs pointing devices, not MacBook vs external.
     /// Total is always at the bottom: keyboards (external + MacBook) + mouse + trackpad.
     /// Stays open across app switches; drag anywhere; close with ✕ or Escape.
     /// Pass `handTrackingDayStart` for 12-day bars to offer “See hourly graphs”.
@@ -175,17 +192,25 @@ final class MacUsageBreakdownPopupPresenter {
         mouseMinutes: Int,
         macbookKeyboardMinutes: Int = 0,
         macbookTrackpadMinutes: Int = 0,
-        handTrackingDayStart: Date? = nil
+        handTrackingDayStart: Date? = nil,
+        keyboardRows: [MacUsageBreakdownKeyboardRow] = []
     ) {
         dismiss()
 
         let showMacKeyboard = macbookKeyboardMinutes >= 5
         let showMacTrackpad = macbookTrackpadMinutes >= 5
+        let rows = keyboardRows.isEmpty
+            ? [MacUsageBreakdownKeyboardRow(
+                id: ExternalKeyboardIdentity.unknown.id,
+                title: "External keyboard",
+                minutes: keyboardMinutes
+            )]
+            : keyboardRows
         let keyboardsMinutes = keyboardMinutes + macbookKeyboardMinutes
         let totalMinutes = keyboardsMinutes + mouseMinutes + macbookTrackpadMinutes
         let dayStart = handTrackingDayStart
         let rootView = MacUsageBreakdownPopupView(
-            keyboardMinutes: keyboardMinutes,
+            keyboardRows: rows,
             mouseMinutes: mouseMinutes,
             macbookKeyboardMinutes: showMacKeyboard ? macbookKeyboardMinutes : nil,
             macbookTrackpadMinutes: showMacTrackpad ? macbookTrackpadMinutes : nil,
@@ -325,7 +350,8 @@ final class MacUsageBreakdownRightClickCaptureView: NSView {
             mouseMinutes: region.mouseMinutes,
             macbookKeyboardMinutes: region.macbookKeyboardMinutes,
             macbookTrackpadMinutes: region.macbookTrackpadMinutes,
-            handTrackingDayStart: region.handTrackingDayStart
+            handTrackingDayStart: region.handTrackingDayStart,
+            keyboardRows: region.keyboardRows
         )
     }
 }
@@ -338,6 +364,44 @@ struct MacUsageBreakdownHitRegion: Equatable {
     var macbookTrackpadMinutes: Int = 0
     /// Set for 12-day chart bars so the popup can offer hourly drill-in.
     var handTrackingDayStart: Date? = nil
+    var keyboardRows: [MacUsageBreakdownKeyboardRow] = []
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.frame == rhs.frame
+            && lhs.keyboardMinutes == rhs.keyboardMinutes
+            && lhs.mouseMinutes == rhs.mouseMinutes
+            && lhs.macbookKeyboardMinutes == rhs.macbookKeyboardMinutes
+            && lhs.macbookTrackpadMinutes == rhs.macbookTrackpadMinutes
+            && lhs.handTrackingDayStart == rhs.handTrackingDayStart
+            && lhs.keyboardRows == rhs.keyboardRows
+    }
+}
+
+@MainActor
+enum MacExternalKeyboardBreakdown {
+    static func rows(
+        store: HandTrackStore,
+        lumpedKeystrokes: Int,
+        perKeyboard: [String: Int],
+        windowStart: Date,
+        rates: MacEstimatedWorkloadMinutes.Rates
+    ) -> [MacUsageBreakdownKeyboardRow] {
+        store.attributedExternalKeyboardKeystrokes(
+            lumpedKeystrokes: lumpedKeystrokes,
+            perKeyboard: perKeyboard,
+            windowStart: windowStart
+        )
+        .map { item in
+            MacUsageBreakdownKeyboardRow(
+                id: item.id,
+                title: store.breakdownTitle(forExternalKeyboard: item.id),
+                minutes: MacEstimatedWorkloadMinutes.keyboardMinutes(
+                    keystrokes: item.keystrokes,
+                    rates: rates
+                )
+            )
+        }
+    }
 }
 
 struct MacUsageBreakdownRightClickLayer: NSViewRepresentable {

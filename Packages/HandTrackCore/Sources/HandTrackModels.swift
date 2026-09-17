@@ -186,6 +186,229 @@ struct ScrollBumpFiveMinuteSlot: Identifiable, Hashable {
     }
 }
 
+struct ExternalKeyboardIdentity: Hashable, Codable, Identifiable {
+    var id: String
+    var vendorID: Int
+    var productID: Int
+    var manufacturer: String
+    var product: String
+    var serial: String
+    var defaultName: String
+
+    static let unknown = ExternalKeyboardIdentity(
+        id: "unknown-external",
+        vendorID: -1,
+        productID: -1,
+        manufacturer: "",
+        product: "",
+        serial: "",
+        defaultName: "External"
+    )
+
+    /// List-only row for the laptop keyboard. Not stored in external-keyboard buckets.
+    static let macbookBuiltin = ExternalKeyboardIdentity(
+        id: "builtin-macbook",
+        vendorID: 1452,
+        productID: 832,
+        manufacturer: "Apple",
+        product: "Internal Keyboard",
+        serial: "",
+        defaultName: "MacBook keyboard"
+    )
+
+    /// Display-only label for leftover lumped external keys on today + the past 3 days.
+    /// Does not rewrite stored minute buckets.
+    static let assumedKinesisRGBSplit = ExternalKeyboardIdentity(
+        id: "handtrack:kinesis-rgb-split",
+        vendorID: -1,
+        productID: -1,
+        manufacturer: "Kinesis",
+        product: "RGB Split",
+        serial: "",
+        defaultName: "Kinesis RGB Split"
+    )
+
+    static func make(
+        vendorID: Int,
+        productID: Int,
+        manufacturer: String,
+        product: String,
+        serial: String = ""
+    ) -> ExternalKeyboardIdentity {
+        let defaultName = defaultHumanName(manufacturer: manufacturer, product: product)
+        let family = normalizedFamily(product: product, manufacturer: manufacturer)
+        let id: String
+        if vendorID > 0, !family.isEmpty {
+            id = "v\(vendorID):\(family)"
+        } else if vendorID > 0, productID > 0 {
+            id = String(format: "v%d:p%d", vendorID, productID)
+        } else if !family.isEmpty {
+            id = "n:\(family)"
+        } else {
+            id = unknown.id
+        }
+        return ExternalKeyboardIdentity(
+            id: id,
+            vendorID: vendorID,
+            productID: productID,
+            manufacturer: manufacturer,
+            product: product,
+            serial: serial,
+            defaultName: defaultName
+        )
+    }
+
+    static func keyboardTitle(displayName: String) -> String {
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return "External keyboard" }
+        if name.range(of: "keyboard", options: .caseInsensitive) != nil {
+            return name
+        }
+        return "\(name) keyboard"
+    }
+
+    static func defaultHumanName(manufacturer: String, product: String) -> String {
+        let productClean = collapseSpaces(product)
+        let brand = cleanedBrand(manufacturer)
+        if productClean.isEmpty {
+            return brand.isEmpty ? "External" : brand
+        }
+        let stripped = stripGenericSuffixes(productClean)
+        if !brand.isEmpty, stripped.range(of: brand, options: .caseInsensitive) == nil {
+            let combined = collapseSpaces("\(brand) \(stripped)")
+            return combined.isEmpty ? "External" : combined
+        }
+        if stripped.isEmpty {
+            return brand.isEmpty ? "External" : brand
+        }
+        return stripped
+    }
+
+    static func cleanedBrand(_ raw: String) -> String {
+        var parts = collapseSpaces(raw)
+            .split(separator: " ")
+            .map(String.init)
+        let suffixes: Set<String> = [
+            "incorporated", "inc.", "inc", "corporation", "corp.", "corp",
+            "limited", "ltd.", "ltd", "llc", "co.", "co", "gmbh",
+        ]
+        while let last = parts.last, suffixes.contains(last.lowercased()) {
+            parts.removeLast()
+        }
+        let joined = parts.joined(separator: " ")
+        let lower = joined.lowercased()
+        if lower.hasPrefix("kinesis") { return "Kinesis" }
+        if lower.hasPrefix("keychron") { return "Keychron" }
+        if lower.hasPrefix("apple") { return "Apple" }
+        if lower.hasPrefix("logitech") { return "Logitech" }
+        return joined
+    }
+
+    static func normalizedFamily(product: String, manufacturer: String) -> String {
+        let source = product.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? manufacturer
+            : product
+        var tokens = source.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+            .split(separator: " ")
+            .map(String.init)
+        let junk: Set<String> = [
+            "keyboard", "keypad", "hid", "usb", "device", "left", "right",
+            "lh", "rh", "consumer", "control", "composite", "interface",
+        ]
+        tokens.removeAll { junk.contains($0) }
+        return tokens.joined(separator: "-")
+    }
+
+    private static func stripGenericSuffixes(_ raw: String) -> String {
+        var parts = collapseSpaces(raw)
+            .split(separator: " ")
+            .map(String.init)
+        let suffixes: Set<String> = ["keyboard", "keyboards", "keypad", "hid", "usb"]
+        while let last = parts.last, suffixes.contains(last.lowercased()), parts.count > 1 {
+            parts.removeLast()
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private static func collapseSpaces(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct ExternalKeyboardProfile: Hashable, Codable, Identifiable {
+    var id: String
+    var vendorID: Int
+    var productID: Int
+    var manufacturer: String
+    var product: String
+    var serial: String
+    var defaultName: String
+    var customName: String?
+    var firstSeen: Date
+    var lastSeen: Date
+
+    var displayName: String {
+        let custom = customName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !custom.isEmpty { return custom }
+        if !defaultName.isEmpty { return defaultName }
+        return "External"
+    }
+
+    var breakdownTitle: String {
+        ExternalKeyboardIdentity.keyboardTitle(displayName: displayName)
+    }
+
+    init(
+        id: String,
+        vendorID: Int,
+        productID: Int,
+        manufacturer: String,
+        product: String,
+        serial: String,
+        defaultName: String,
+        customName: String? = nil,
+        firstSeen: Date,
+        lastSeen: Date
+    ) {
+        self.id = id
+        self.vendorID = vendorID
+        self.productID = productID
+        self.manufacturer = manufacturer
+        self.product = product
+        self.serial = serial
+        self.defaultName = defaultName
+        self.customName = customName
+        self.firstSeen = firstSeen
+        self.lastSeen = lastSeen
+    }
+
+    init(identity: ExternalKeyboardIdentity, at date: Date = Date(), customName: String? = nil) {
+        self.init(
+            id: identity.id,
+            vendorID: identity.vendorID,
+            productID: identity.productID,
+            manufacturer: identity.manufacturer,
+            product: identity.product,
+            serial: identity.serial,
+            defaultName: identity.defaultName,
+            customName: customName,
+            firstSeen: date,
+            lastSeen: date
+        )
+    }
+}
+
+struct ExternalKeyboardMinuteBucket: Identifiable, Hashable {
+    var minuteStart: Date
+    var keyboardId: String
+    var keyCount: Int
+
+    var id: String { "\(minuteStart.timeIntervalSince1970)|\(keyboardId)" }
+}
+
 struct BuiltinKeyboardMinuteBucket: Identifiable, Codable, Hashable {
     var minuteStart: Date
     var keyCount: Int
@@ -275,6 +498,8 @@ struct ComputerUsageHourSlot: Identifiable, Hashable {
     var builtinTrackpadClickCount: Int = 0
     var builtinTrackpadTravelPixels: Double = 0
     var builtinTrackpadScrollPixels: Double = 0
+    /// Per-device external keystrokes. Lumped ``keystrokeCount`` stays the External-tab total.
+    var externalKeyboardKeystrokes: [String: Int] = [:]
 
     var id: Date { hourStart }
 }
@@ -291,6 +516,8 @@ struct ComputerUsageDaySlot: Identifiable, Hashable {
     var builtinTrackpadClickCount: Int = 0
     var builtinTrackpadTravelPixels: Double = 0
     var builtinTrackpadScrollPixels: Double = 0
+    /// Per-device external keystrokes. Lumped ``keystrokeCount`` stays the External-tab total.
+    var externalKeyboardKeystrokes: [String: Int] = [:]
 
     var id: Date { dayStart }
 }
