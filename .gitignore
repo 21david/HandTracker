@@ -6,3 +6,20 @@ build/
 .swiftpm/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+
+# Local Cursor debug logs / agent state
+.cursor/
+
+# Duplicate Xcode projects; the committed app project is r.xcodeproj
+HandHelper.xcodeproj/
+HandTrack.xcodeproj/
+
+# Local notes, source artwork, and one-off project-surgery scripts
+handtrack_logs.txt
+hand_artwork_source.png
+scripts/add_assets.py
+scripts/fix_project_assets.py
+scripts/fix_project_properly.py
+scripts/fix_project_properly_v2.py
+scripts/fix_project_structure.py
+
