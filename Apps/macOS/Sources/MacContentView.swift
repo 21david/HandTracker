@@ -7,7 +7,6 @@ struct MacContentView: View {
     @State private var showSyncInfo = false
     @State private var showIosLogsSheet = false
     @State private var showActivityLimits = false
-    @State private var showKeyboardSettings = false
     @State private var showingMoreCharts = false
     @State private var showingHistoricalPlots = false
     /// Hand-tracking day start when drilling into 24 hourly bars from the 12-day chart.
@@ -41,9 +40,6 @@ struct MacContentView: View {
     }()
 
     var body: some View {
-        // #region agent log
-        let _ = MacAgentDebugLog.noteContentBodyEval()
-        // #endregion
         Group {
             if let hourlyDayDetailStart {
                 MacDayHourlyUsageDetailView(dayStart: hourlyDayDetailStart) {
@@ -182,23 +178,11 @@ struct MacContentView: View {
                 .buttonStyle(GrayAccessoryPillButtonStyle())
                 .help("Debug overlay: live flash tiles for each graph input (deletable)")
 
-                Button {
-                    var transaction = Transaction()
-                    transaction.animation = nil
-                    withTransaction(transaction) {
-                        showKeyboardSettings.toggle()
-                    }
-                } label: {
-                    Text("Keyboards")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .tracking(0.15)
-                }
-                .buttonStyle(GrayAccessoryPillButtonStyle(isSelected: showKeyboardSettings))
-                .help("Detected keyboards")
-                .popover(isPresented: $showKeyboardSettings, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
-                    MacExternalKeyboardsSettingsPopover(store: store, livePulse: livePulse)
-                        .transaction { $0.animation = nil }
-                }
+                MacKeyboardsAccessoryButton(
+                    store: store,
+                    livePulse: livePulse,
+                    keyboardLimits: viewModel.keyboardLimits
+                )
 
                 Button {
                     showIosLogsSheet = true
@@ -585,6 +569,31 @@ private struct MacHourlySyncedLogRow: View {
     }
 }
 
+private struct MacKeyboardsAccessoryButton: View {
+    @ObservedObject var store: HandTrackStore
+    var livePulse: HandTrackLivePulse
+    @ObservedObject var keyboardLimits: MacKeyboardLimitController
+    @State private var anchorView: NSView?
+
+    var body: some View {
+        Button {
+            MacKeyboardsSettingsPresenter.shared.toggle(
+                relativeTo: anchorView,
+                store: store,
+                livePulse: livePulse,
+                keyboardLimits: keyboardLimits
+            )
+        } label: {
+            Text("Keyboards")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .tracking(0.15)
+        }
+        .buttonStyle(GrayAccessoryPillButtonStyle())
+        .background(MacKeyboardsAnchorCatcher { anchorView = $0 })
+        .help("Detected keyboards")
+    }
+}
+
 // MARK: - Mute controls + gray accessory pills
 
 /// Warm-orange capsule for Activity Limits — uses the same geometry as the gray pill
@@ -639,13 +648,9 @@ private struct OrangeAccessoryPillButtonStyle: ButtonStyle {
 
 /// Neutral metal capsule for Logs / Open Data Folder (muted blue‑pill geometry, gray alloy).
 private struct GrayAccessoryPillButtonStyle: ButtonStyle {
-    var isSelected = false
-
     func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        let latched = isSelected || pressed
         configuration.label
-            .foregroundStyle(Color.white.opacity(pressed ? 0.92 : 0.98))
+            .foregroundStyle(Color.white.opacity(configuration.isPressed ? 0.88 : 0.97))
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(
@@ -653,15 +658,10 @@ private struct GrayAccessoryPillButtonStyle: ButtonStyle {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: latched
-                                    ? [
-                                        Color(red: 0.34, green: 0.35, blue: 0.38),
-                                        Color(red: 0.16, green: 0.17, blue: 0.19),
-                                      ]
-                                    : [
-                                        Color(red: 0.62, green: 0.63, blue: 0.66),
-                                        Color(red: 0.40, green: 0.41, blue: 0.44),
-                                      ],
+                                colors: [
+                                    Color(red: 0.62, green: 0.63, blue: 0.66),
+                                    Color(red: 0.40, green: 0.41, blue: 0.44),
+                                ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -669,10 +669,7 @@ private struct GrayAccessoryPillButtonStyle: ButtonStyle {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color.white.opacity(latched ? 0.18 : 0.34),
-                                    Color.clear,
-                                ],
+                                colors: [Color.white.opacity(0.34), Color.clear],
                                 startPoint: .top,
                                 endPoint: UnitPoint(x: 0.5, y: 0.55)
                             )
@@ -681,31 +678,19 @@ private struct GrayAccessoryPillButtonStyle: ButtonStyle {
                     Capsule()
                         .strokeBorder(
                             LinearGradient(
-                                colors: latched
-                                    ? [
-                                        Color.white.opacity(0.70),
-                                        Color.white.opacity(0.22),
-                                      ]
-                                    : [
-                                        Color.white.opacity(0.45),
-                                        Color.black.opacity(0.28),
-                                      ],
+                                colors: [
+                                    Color.white.opacity(0.45),
+                                    Color.black.opacity(0.28),
+                                ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: latched ? 1.4 : 1
+                            lineWidth: 1
                         )
                 }
-                .shadow(
-                    color: .black.opacity(latched ? 0.12 : 0.26),
-                    radius: pressed ? 0 : 3,
-                    x: 0,
-                    y: pressed ? 0 : 2
-                )
+                .shadow(color: .black.opacity(0.26), radius: configuration.isPressed ? 1 : 3, x: 0, y: configuration.isPressed ? 0 : 2)
             )
-            .scaleEffect(pressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.06), value: pressed)
-            .animation(.easeOut(duration: 0.08), value: isSelected)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }
 

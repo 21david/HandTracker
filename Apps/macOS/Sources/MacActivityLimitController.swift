@@ -207,22 +207,160 @@ final class MacActivityLimitController: ObservableObject {
         let nsName = NSSound.Name(name)
         let clamped = max(0, min(Float(volumePercent) / 100.0, 1))
         let named = NSSound(named: nsName)
-        // #region agent log
-        MacAgentDebugLog.log(
-            hypothesisId: named == nil ? "C" : "B",
-            location: "MacActivityLimitController.swift:playBreakSound",
-            message: "activity-limit break sound playing",
-            data: [
-                "soundName": name,
-                "volumePercent": volumePercent,
-                "usedNamedSound": named != nil,
-                "fallbackBeep": named == nil,
-                "appActive": NSApp.isActive,
-                "activeBreakKinds": activeBreaks.keys.map(\.rawValue).sorted(),
-            ]
-        )
-        // #endregion
         if let sound = named {
+            sound.volume = clamped
+            sound.play()
+        } else {
+            NSSound.beep()
+        }
+    }
+}
+
+/// Per-keyboard usage caps on the Keyboards tab. Trailing 1/3/6/12/24 hour windows;
+/// once the cap is hit, each keystroke on that board plays the Activity Limits alarm until
+/// enough of that window’s typing ages out.
+@MainActor
+final class MacKeyboardLimitController: ObservableObject {
+    private weak var store: HandTrackStore?
+    private var rules: [String: KeyboardLimitRule] = [:]
+    private var alarmUntil: [String: Date] = [:]
+    private var tickTimer: Timer?
+    private var didPlayRecoveryFor: Set<String> = []
+
+    func attach(store: HandTrackStore) {
+        self.store = store
+        rules = HandTrackKeyboardLimitsStorage.loadRules()
+        startTickTimer()
+    }
+
+    func detach() {
+        tickTimer?.invalidate()
+        tickTimer = nil
+        store = nil
+        rules.removeAll()
+        alarmUntil.removeAll()
+        didPlayRecoveryFor.removeAll()
+    }
+
+    func rule(for keyboardId: String) -> KeyboardLimitRule {
+        rules[keyboardId] ?? .disabledDefault
+    }
+
+    func setRule(_ rule: KeyboardLimitRule, for keyboardId: String) {
+        var next = rule
+        next.windowHours = next.resolvedWindowHours
+        next.threshold = max(1, next.threshold)
+        rules[keyboardId] = next
+        HandTrackKeyboardLimitsStorage.saveRules(rules)
+        if !next.enabled {
+            alarmUntil.removeValue(forKey: keyboardId)
+        }
+        objectWillChange.send()
+    }
+
+    func status(for keyboardId: String, at now: Date = Date()) -> KeyboardLimitStatus? {
+        let current = rule(for: keyboardId)
+        guard current.enabled, let store else { return nil }
+        let hours = current.resolvedWindowHours
+        let windowStart = KeyboardLimitClock.rollingStart(hours: hours, now: now)
+        let buckets = store.keyboardKeystrokeMinuteCounts(
+            forKeyboard: keyboardId,
+            from: windowStart,
+            through: now
+        )
+        let keys = buckets.reduce(0) { $0 + $1.count }
+        let rates = MacEstimatedWorkloadMinutes.Rates.fromUserDefaults()
+        let used: Int
+        let thresholdKeys: Double
+        switch current.unit {
+        case .keystrokes:
+            used = keys
+            thresholdKeys = Double(max(1, current.threshold))
+        case .minutes:
+            used = MacEstimatedWorkloadMinutes.keyboardMinutes(keystrokes: keys, rates: rates)
+            thresholdKeys = Double(max(1, current.threshold)) * rates.keysPerMinute
+        }
+        let isOver = used >= current.threshold
+        let resetsAt = isOver ? Self.resetTime(buckets: buckets, thresholdKeys: thresholdKeys, hours: hours) : nil
+        return KeyboardLimitStatus(
+            rule: current,
+            keystrokes: keys,
+            usedAmount: used,
+            resetsAt: resetsAt,
+            isOver: isOver
+        )
+    }
+
+    func registerKeystrokes(keyboardId: String, count: Int, at now: Date, playSound: Bool) {
+        guard count > 0 else { return }
+        guard let status = status(for: keyboardId, at: now) else { return }
+        if status.isOver, let resetsAt = status.resetsAt {
+            alarmUntil[keyboardId] = resetsAt
+            didPlayRecoveryFor.remove(keyboardId)
+            if playSound {
+                playLimitSound()
+            }
+        }
+    }
+
+    private static func resetTime(
+        buckets: [(minuteStart: Date, count: Int)],
+        thresholdKeys: Double,
+        hours: Int
+    ) -> Date {
+        let window = TimeInterval(max(1, hours) * 3600)
+        var remaining = buckets.reduce(0.0) { $0 + Double($1.count) }
+        let ordered = buckets.sorted { $0.minuteStart < $1.minuteStart }
+        for bucket in ordered {
+            remaining -= Double(bucket.count)
+            if remaining < thresholdKeys {
+                return bucket.minuteStart.addingTimeInterval(window)
+            }
+        }
+        return (ordered.last?.minuteStart ?? Date()).addingTimeInterval(window)
+    }
+
+    private func startTickTimer() {
+        tickTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.pruneRecovered(now: Date())
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        tickTimer = timer
+    }
+
+    private func pruneRecovered(now: Date) {
+        guard !alarmUntil.isEmpty else { return }
+        for (keyboardId, until) in alarmUntil {
+            if let live = status(for: keyboardId, at: now), live.isOver, let reset = live.resetsAt, reset > now {
+                alarmUntil[keyboardId] = reset
+                continue
+            }
+            guard until <= now else { continue }
+            alarmUntil.removeValue(forKey: keyboardId)
+            guard !didPlayRecoveryFor.contains(keyboardId) else { continue }
+            didPlayRecoveryFor.insert(keyboardId)
+            playRecoverySound()
+        }
+    }
+
+    private func playLimitSound() {
+        playNamedSound(HandTrackActivityLimitsSnapshot.loadFromUserDefaults().soundName)
+    }
+
+    private func playRecoverySound() {
+        playNamedSound("Glass")
+    }
+
+    private func playNamedSound(_ name: String) {
+        let snapshot = HandTrackActivityLimitsSnapshot.loadFromUserDefaults()
+        let clamped = max(0, min(Float(snapshot.soundVolumePercent) / 100.0, 1))
+        if let sound = NSSound(named: NSSound.Name(name)) {
+            sound.volume = clamped
+            sound.play()
+        } else if let sound = NSSound(named: NSSound.Name("Glass")) {
             sound.volume = clamped
             sound.play()
         } else {

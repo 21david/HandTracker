@@ -46,7 +46,6 @@
 		8A8B5BE592842B541B7C3D97 /* HandTrackLivePulse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363AAC5BBE02F72EA70A1FF7 /* HandTrackLivePulse.swift */; };
 		8E22276E9DC76C3A596507FD /* MacExternalKeyboardsSettingsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309FB4D5693EAFBD707350C0 /* MacExternalKeyboardsSettingsPopover.swift */; };
 		9219C116395E5AC15AE16D4E /* MacMutePauseControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 234C3348DD15D675777BB7E2 /* MacMutePauseControls.swift */; };
-		94975FEC01CE080DAA04D304 /* MacAgentDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */; };
 		9ADAD15CF5A1F83C733FC4F8 /* MacActivityBreakBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643AEF8B074D5151DFD602F7 /* MacActivityBreakBanner.swift */; };
 		A5CC8E65D1BBF91DB46787C5 /* MacUnhandledKeystrokeBeepProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5606B27CFACB6ED9E1E4D325 /* MacUnhandledKeystrokeBeepProbe.swift */; };
 		AB335DDE2A462292E99FB853 /* MacKeystrokeFiveMinuteChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97290D31647114C2F1E22475 /* MacKeystrokeFiveMinuteChart.swift */; };
@@ -102,7 +101,6 @@
 		9DFFF85DAC8C40870CAB463B /* MacBuiltinTrackpadScrollFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinTrackpadScrollFiveMinuteChart.swift; sourceTree = "<group>"; };
 		A45AE0EE4D51075B5EF85A7B /* MacDayHourlyUsageDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDayHourlyUsageDetailView.swift; sourceTree = "<group>"; };
 		A7D4B027164D210A8C2B8CA8 /* MacKarabinerBuiltinKeyboardRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKarabinerBuiltinKeyboardRelease.swift; sourceTree = "<group>"; };
-		B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentDebugLog.swift; sourceTree = "<group>"; };
 		B7BC04AB9273A2FBF4F447C9 /* MacPlotHTMLWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPlotHTMLWebView.swift; sourceTree = "<group>"; };
 		BFB5204CFF1FAC1D7254D9BD /* MacBuiltinTrackpadClickFiveMinuteChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBuiltinTrackpadClickFiveMinuteChart.swift; sourceTree = "<group>"; };
 		C2781108EDDF110EBCCE2BB6 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
@@ -238,7 +236,6 @@
 				643AEF8B074D5151DFD602F7 /* MacActivityBreakBanner.swift */,
 				77A0603B6A83A1637BA2A7B8 /* MacActivityLimitController.swift */,
 				9BC214C27D4B7422EAC88819 /* MacActivityLimitsPopover.swift */,
-				B6B78F412FF0134181308B04 /* MacAgentDebugLog.swift */,
 				E025F825256962950A81F69B /* MacBuiltinKeyboardFiveMinuteChart.swift */,
 				BFB5204CFF1FAC1D7254D9BD /* MacBuiltinTrackpadClickFiveMinuteChart.swift */,
 				9DFFF85DAC8C40870CAB463B /* MacBuiltinTrackpadScrollFiveMinuteChart.swift */,
@@ -399,7 +396,6 @@
 				9ADAD15CF5A1F83C733FC4F8 /* MacActivityBreakBanner.swift in Sources */,
 				6038D544231EB6C4CBCBA64F /* MacActivityLimitController.swift in Sources */,
 				5E231E779D7F0FE7EF9BAA3A /* MacActivityLimitsPopover.swift in Sources */,
-				94975FEC01CE080DAA04D304 /* MacAgentDebugLog.swift in Sources */,
 				12017F8EEBAEDC00397448DE /* MacBuiltinKeyboardFiveMinuteChart.swift in Sources */,
 				858D4A3438A73893087D48B7 /* MacBuiltinTrackpadClickFiveMinuteChart.swift in Sources */,
 				260C668719283D436DB12EE0 /* MacBuiltinTrackpadScrollFiveMinuteChart.swift in Sources */,

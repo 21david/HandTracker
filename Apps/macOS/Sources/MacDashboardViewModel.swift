@@ -23,6 +23,7 @@ final class MacDashboardViewModel: ObservableObject {
     @Published private(set) var activityLimitsPauseChosenMinutes: Int?
 
     let activityLimits = MacActivityLimitController()
+    let keyboardLimits = MacKeyboardLimitController()
 
     private let monitor = KeystrokeMonitor()
     private var syncServer: HandTrackSyncServer?
@@ -120,6 +121,7 @@ final class MacDashboardViewModel: ObservableObject {
         refreshExpiredPauseIfNeeded(now: Date())
         self.store = store
         activityLimits.attach(store: store)
+        keyboardLimits.attach(store: store)
         monitor.onKeystroke = { [weak self] in
             self?.enqueueDiscreteInput(\.externalKeys)
         }
@@ -217,20 +219,6 @@ final class MacDashboardViewModel: ObservableObject {
         else { return }
 
         let now = Date()
-        // #region agent log
-        MacAgentDebugLog.log(
-            hypothesisId: "P5",
-            location: "MacDashboardViewModel.flushPendingDiscreteInput",
-            message: "input_batch_flush",
-            data: [
-                "runId": "perf-responsive",
-                "externalKeys": batch.externalKeys,
-                "builtinKeys": batch.builtinKeys,
-                "clicks": batch.mouseClicks,
-                "appActive": NSApp.isActive,
-            ]
-        )
-        // #endregion
 
         if batch.externalKeys > 0 {
             store.recordKeystrokes(batch.externalKeys, at: now)
@@ -238,10 +226,22 @@ final class MacDashboardViewModel: ObservableObject {
         }
         for (identity, count) in batch.externalByKeyboard where count > 0 {
             store.recordExternalKeyboardKeystrokes(count, identity: identity, at: now)
+            keyboardLimits.registerKeystrokes(
+                keyboardId: identity.id,
+                count: count,
+                at: now,
+                playSound: !breakAlarmsMutedForPlaybackNow()
+            )
         }
         if batch.builtinKeys > 0 {
             store.recordBuiltinKeystrokes(batch.builtinKeys, at: now)
             applyActivityLimit(for: .keystrokes, eventCount: batch.builtinKeys, at: now)
+            keyboardLimits.registerKeystrokes(
+                keyboardId: ExternalKeyboardIdentity.macbookBuiltin.id,
+                count: batch.builtinKeys,
+                at: now,
+                playSound: !breakAlarmsMutedForPlaybackNow()
+            )
         }
         if batch.mouseClicks > 0 {
             store.recordMouseClicks(batch.mouseClicks, at: now)
@@ -269,6 +269,7 @@ final class MacDashboardViewModel: ObservableObject {
         syncServer = nil
         store = nil
         activityLimits.detach()
+        keyboardLimits.detach()
         syncStatus = "Stopped"
     }
 

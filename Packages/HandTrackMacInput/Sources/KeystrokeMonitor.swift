@@ -86,14 +86,6 @@ final class KeystrokeMonitor {
     private var trackpadScrollGestureActive = false
     /// Accumulates continuous mouse point deltas when the device reports no line ticks.
     private var mouseContinuousPointAccumulator: Double = 0
-    // #region agent log
-    private var debugGestureScrollPixelSum: Double = 0
-    private var debugGestureScrollEventCount: Int = 0
-    private var debugGestureMomentumSkippedSum: Double = 0
-    private var debugGestureMomentumSkippedCount: Int = 0
-    private var debugGestureLatchSkippedSum: Double = 0
-    private var debugGestureLatchSkippedCount: Int = 0
-    // #endregion
 
     private let keyboardLock = NSLock()
     private var lastBuiltinHIDKeyAt: CFAbsoluteTime = 0
@@ -116,30 +108,6 @@ final class KeystrokeMonitor {
     /// would otherwise be miscounted as an external mouse click.
     private static let logitechGHubInjectedFlagMask: UInt64 = 0x2000_0000
 
-    // #region agent log
-    private static let debugLogPath = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-b2bfc5.log"
-    private static let debugLogQueue = DispatchQueue(label: "HandTrack.debugScrollLog")
-    private var debugTrackpadRouteLogCount = 0
-    private var debugMouseRouteLogCount = 0
-    private var debugKeyClassifyLogCount = 0
-    private var debugKeyDecisionLogCount = 0
-    private var debugHIDClaimLogCount = 0
-    private var debugInventoryLogCount = 0
-    private var debugOtherMouseLogCount = 0
-    private var debugPendingMouseBumpSchedules = 0
-    private var debugTapWindowStartedAt: CFAbsoluteTime = 0
-    private var debugTapCallbackCount = 0
-    private var debugTapMouseMoveCount = 0
-    private var debugTapKeyCount = 0
-    private var debugTapScrollCount = 0
-    private var debugTapCallbackNanos: UInt64 = 0
-    private var debugTapMainThreadCount = 0
-    private var debugSessionHIDLogCount = 0
-    private var debugSessionEmitLogCount = 0
-    private var debugSessionResolveLogCount = 0
-    private var debugSessionAttachLogCount = 0
-    private var debugSessionCGFieldLogCount = 0
-    // #endregion
 
     var isMonitoring: Bool {
         eventTap != nil
@@ -150,52 +118,6 @@ final class KeystrokeMonitor {
         learnedBuiltinKeyboardTypes = Set(stored.map { Int64($0) })
     }
 
-    // #region agent log
-    private func agentDebugLog(
-        hypothesisId: String,
-        location: String,
-        message: String,
-        data: [String: Any] = [:]
-    ) {
-        // Disabled after verified fix — keep call sites folded for now.
-        _ = (hypothesisId, location, message, data)
-    }
-
-    private func sessionDebugLog(
-        hypothesisId: String,
-        location: String,
-        message: String,
-        data: [String: Any] = [:]
-    ) {
-        let path = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-869910.log"
-        var payload: [String: Any] = [
-            "sessionId": "869910",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesisId,
-            "location": location,
-            "message": message,
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "data": data,
-        ]
-        guard JSONSerialization.isValidJSONObject(payload),
-              let json = try? JSONSerialization.data(withJSONObject: payload),
-              var line = String(data: json, encoding: .utf8)
-        else { return }
-        line.append("\n")
-        Self.debugLogQueue.async {
-            let url = URL(fileURLWithPath: path)
-            if FileManager.default.fileExists(atPath: path),
-               let handle = try? FileHandle(forWritingTo: url)
-            {
-                defer { try? handle.close() }
-                handle.seekToEndOfFile()
-                handle.write(Data(line.utf8))
-            } else {
-                try? line.write(to: url, atomically: false, encoding: .utf8)
-            }
-        }
-    }
-    // #endregion
 
     func start() {
         tapLifecycleLock.lock()
@@ -244,9 +166,6 @@ final class KeystrokeMonitor {
                 .fromOpaque(refcon)
                 .takeUnretainedValue()
 
-            // #region agent log
-            let tapT0 = DispatchTime.now().uptimeNanoseconds
-            // #endregion
 
             switch type {
             case .keyDown:
@@ -262,18 +181,12 @@ final class KeystrokeMonitor {
                     monitor.onMouseClick?()
                 }
             case .rightMouseDown:
-                // #region agent log
-                monitor.debugLogMouseButton(event: event, kind: "rightMouseDown")
-                // #endregion
                 if monitor.isTrackpadTouchEvent(event) {
                     monitor.onBuiltinTrackpadClick?()
                 } else {
                     monitor.onMouseClick?()
                 }
             case .otherMouseDown:
-                // #region agent log
-                monitor.debugLogMouseButton(event: event, kind: "otherMouseDown")
-                // #endregion
                 if monitor.isTrackpadTouchEvent(event) {
                     monitor.onBuiltinTrackpadClick?()
                 } else {
@@ -295,11 +208,6 @@ final class KeystrokeMonitor {
                 break
             }
 
-            // #region agent log
-            // Tap window sampling disabled — was competing with UI during lag tests.
-            // monitor.debugTapSample(type: type, startedNanos: tapT0)
-            _ = tapT0
-            // #endregion
             return Unmanaged.passUnretained(event)
         }
 
@@ -332,68 +240,11 @@ final class KeystrokeMonitor {
         CFRunLoopAddSource(loop, source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        // #region agent log
-        agentDebugLog(
-            hypothesisId: "L1",
-            location: "KeystrokeMonitor.start",
-            message: "event_tap_started",
-            data: [
-                "runId": "post-fix-lag",
-                "onMainThread": Thread.isMainThread,
-                "thread": Thread.current.name ?? "unnamed",
-            ]
-        )
-        // #endregion
 
         scheduleFlushTimer()
         CFRunLoopRun()
     }
 
-    // #region agent log
-    private func debugTapSample(type: CGEventType, startedNanos: UInt64) {
-        let elapsed = DispatchTime.now().uptimeNanoseconds &- startedNanos
-        if debugTapWindowStartedAt == 0 {
-            debugTapWindowStartedAt = CFAbsoluteTimeGetCurrent()
-        }
-        debugTapCallbackCount += 1
-        debugTapCallbackNanos += elapsed
-        if Thread.isMainThread { debugTapMainThreadCount += 1 }
-        switch type {
-        case .keyDown: debugTapKeyCount += 1
-        case .scrollWheel: debugTapScrollCount += 1
-        case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-            debugTapMouseMoveCount += 1
-        default: break
-        }
-        let window = CFAbsoluteTimeGetCurrent() - debugTapWindowStartedAt
-        guard window >= 1.0 else { return }
-        agentDebugLog(
-            hypothesisId: "L1",
-            location: "KeystrokeMonitor.eventTap",
-            message: "tap_callback_window",
-            data: [
-                "runId": "post-fix-lag",
-                "windowMs": Int(window * 1000),
-                "callbacks": debugTapCallbackCount,
-                "mouseMoves": debugTapMouseMoveCount,
-                "keys": debugTapKeyCount,
-                "scrolls": debugTapScrollCount,
-                "mainThreadCallbacks": debugTapMainThreadCount,
-                "totalCallbackMs": Int(debugTapCallbackNanos / 1_000_000),
-                "avgCallbackUs": debugTapCallbackCount > 0
-                    ? Int(debugTapCallbackNanos / UInt64(debugTapCallbackCount) / 1_000)
-                    : 0,
-            ]
-        )
-        debugTapWindowStartedAt = CFAbsoluteTimeGetCurrent()
-        debugTapCallbackCount = 0
-        debugTapMouseMoveCount = 0
-        debugTapKeyCount = 0
-        debugTapScrollCount = 0
-        debugTapCallbackNanos = 0
-        debugTapMainThreadCount = 0
-    }
-    // #endregion
 
     func stop() {
         tapLifecycleLock.lock()
@@ -447,29 +298,16 @@ final class KeystrokeMonitor {
     private func handleKeyDown(_ event: CGEvent) {
         refreshKeyboardInventory(force: false)
         let kbdType = event.getIntegerValueField(.keyboardEventKeyboardType)
-        let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags.rawValue
 
         // G Hub maps G502 extras to keyDown type 70 *with* synthetic flag bits.
         // MacBook keys (after Karabiner ignore) also use type 70 but flags==256 — must not count as clicks.
         if Self.isLogitechGHubInjectedKeystroke(kbdType: kbdType, flags: flags) {
-            // #region agent log
-            debugKeyDecisionLogCount += 1
-            if debugKeyDecisionLogCount <= 12 {
-                agentDebugLog(
-                    hypothesisId: "D",
-                    location: "KeystrokeMonitor.handleKeyDown.classify",
-                    message: "decision_mouse_click_ghub",
-                    data: ["kbdType": kbdType, "keycode": keycode, "flags": flags, "runId": "post-fix6"]
-                )
-            }
-            // #endregion
             onMouseClick?()
             return
         }
 
-        logCGEventIdentityFields(event, keycode: keycode, kbdType: kbdType)
-        classifyAndRecordKeystroke(keycode: keycode, kbdType: kbdType, flags: flags)
+        classifyAndRecordKeystroke(kbdType: kbdType, flags: flags)
     }
 
     /// Modifier keys never arrive as `.keyDown` — only `.flagsChanged`. Count each press 1:1.
@@ -499,11 +337,10 @@ final class KeystrokeMonitor {
         refreshKeyboardInventory(force: false)
         let kbdType = event.getIntegerValueField(.keyboardEventKeyboardType)
         let flags = event.flags.rawValue
-        classifyAndRecordKeystroke(keycode: keycode, kbdType: kbdType, flags: flags)
+        classifyAndRecordKeystroke(kbdType: kbdType, flags: flags)
     }
 
     private func classifyAndRecordKeystroke(
-        keycode: Int64,
         kbdType: Int64,
         flags: UInt64
     ) {
@@ -522,73 +359,15 @@ final class KeystrokeMonitor {
             let karabiner = self.hasKarabinerVirtualKeyboard
             let learned = self.learnedBuiltinKeyboardTypes
             let resolvedExternal = self.resolvedExternalIdentityAssumingLocked(now: now)
-            let hidAge = now - self.lastExternalHIDKeyAt
-            let hidId = self.lastExternalHIDIdentity?.id ?? ""
-            let lastUsedId = self.lastUsedExternalIdentity?.id ?? ""
-            let connectedIds = self.connectedExternalIdentities.map(\.id)
-            let connectedNames = self.connectedExternalIdentities.map(\.defaultName)
-            let usbFallbackId = self.uniqueUSBExternalIdentityAssumingLocked()?.id ?? ""
-            let transports = self.connectedExternalTransports
             self.keyboardLock.unlock()
 
             // With Karabiner, physical IOHID only stamps a claim; CGEvent counts once using it.
             if karabiner {
                 if builtinHIDClaimed {
-                    // #region agent log
-                    self.debugKeyDecisionLogCount += 1
-                    if self.debugKeyDecisionLogCount <= 20 {
-                        self.agentDebugLog(
-                            hypothesisId: "F",
-                            location: "KeystrokeMonitor.handleKeyDown.classify",
-                            message: "decision_builtin",
-                            data: [
-                                "reason": "karabiner_hid_builtin",
-                                "keycode": keycode,
-                                "runId": "post-fix6",
-                            ]
-                        )
-                    }
-                    // #endregion
                     self.onBuiltinKeystroke?()
                     return
                 }
                 if externalHIDClaimed {
-                    // #region agent log
-                    self.debugKeyDecisionLogCount += 1
-                    if self.debugKeyDecisionLogCount <= 20 {
-                        self.agentDebugLog(
-                            hypothesisId: "F",
-                            location: "KeystrokeMonitor.handleKeyDown.classify",
-                            message: "decision_external",
-                            data: [
-                                "reason": "karabiner_hid_external",
-                                "keycode": keycode,
-                                "runId": "post-fix6",
-                            ]
-                        )
-                    }
-                    // #endregion
-                    // #region agent log
-                    self.debugSessionResolveLogCount += 1
-                    if self.debugSessionResolveLogCount <= 25 {
-                        self.sessionDebugLog(
-                            hypothesisId: "C",
-                            location: "KeystrokeMonitor.classifyAndRecordKeystroke",
-                            message: "cgevent_karabiner_external",
-                            data: [
-                                "resolvedId": resolvedExternal.id,
-                                "resolvedName": resolvedExternal.defaultName,
-                                "hidAgeMs": Int(hidAge * 1000),
-                                "hidId": hidId,
-                                "lastUsedId": lastUsedId,
-                                "connectedIds": connectedIds,
-                                "connectedNames": connectedNames,
-                                "kbdType": kbdType,
-                                "keycode": keycode,
-                            ]
-                        )
-                    }
-                    // #endregion
                     self.emitExternalKeystroke(resolvedExternal)
                     return
                 }
@@ -598,22 +377,6 @@ final class KeystrokeMonitor {
                    kbdType == Self.logitechGHubInjectedKeyboardType,
                    (flags & Self.logitechGHubInjectedFlagMask) == 0
                 {
-                    // #region agent log
-                    self.debugKeyDecisionLogCount += 1
-                    if self.debugKeyDecisionLogCount <= 20 {
-                        self.agentDebugLog(
-                            hypothesisId: "J",
-                            location: "KeystrokeMonitor.handleKeyDown.classify",
-                            message: "decision_builtin",
-                            data: [
-                                "reason": "macbook_native_type70",
-                                "keycode": keycode,
-                                "flags": flags,
-                                "runId": "post-fix6",
-                            ]
-                        )
-                    }
-                    // #endregion
                     self.onBuiltinKeystroke?()
                     return
                 }
@@ -628,65 +391,11 @@ final class KeystrokeMonitor {
                 karabinerPresent: karabiner,
                 learned: learned
             )
-            // #region agent log
-            self.debugKeyDecisionLogCount += 1
-            if self.debugKeyDecisionLogCount <= 20 {
-                let reason: String
-                if !externalConnected {
-                    reason = "no_external_inventory"
-                } else if karabiner {
-                    reason = "karabiner_cgevent_fallback"
-                } else if learned.contains(kbdType) {
-                    reason = "learned_type_match"
-                } else {
-                    reason = "external_default"
-                }
-                self.agentDebugLog(
-                    hypothesisId: "F",
-                    location: "KeystrokeMonitor.handleKeyDown.classify",
-                    message: asBuiltin ? "decision_builtin" : "decision_external",
-                    data: [
-                        "kbdType": kbdType,
-                        "keycode": keycode,
-                        "externalConnected": externalConnected,
-                        "karabinerPresent": karabiner,
-                        "reason": reason,
-                        "runId": "post-fix3",
-                    ]
-                )
-            }
-            // #endregion
 
             if asBuiltin {
                 self.rememberBuiltinKeyboardType(kbdType)
                 self.onBuiltinKeystroke?()
             } else {
-                // #region agent log
-                self.debugSessionResolveLogCount += 1
-                if self.debugSessionResolveLogCount <= 25 {
-                    self.sessionDebugLog(
-                        hypothesisId: "C",
-                        location: "KeystrokeMonitor.classifyAndRecordKeystroke",
-                        message: "cgevent_fallback_external",
-                        data: [
-                            "resolvedId": resolvedExternal.id,
-                            "resolvedName": resolvedExternal.defaultName,
-                            "hidAgeMs": Int(hidAge * 1000),
-                            "hidId": hidId,
-                            "lastUsedId": lastUsedId,
-                            "connectedIds": connectedIds,
-                            "connectedNames": connectedNames,
-                            "usbFallbackId": usbFallbackId,
-                            "transports": transports,
-                            "hidClaimed": externalHIDClaimed,
-                            "kbdType": kbdType,
-                            "keycode": keycode,
-                            "karabiner": karabiner,
-                            "runId": "post-fix7",
-                        ]
-                    )
-                }
-                // #endregion
                 self.emitExternalKeystroke(resolvedExternal)
             }
         }
@@ -774,60 +483,12 @@ final class KeystrokeMonitor {
             onExternalKeyboardInventory?(identities)
         }
 
-        // #region agent log
-        debugInventoryLogCount += 1
-        if debugInventoryLogCount <= 8 {
-            sessionDebugLog(
-                hypothesisId: "B",
-                location: "KeystrokeMonitor.refreshKeyboardInventory",
-                message: "keyboard_inventory",
-                data: [
-                    "externalConnected": inventory.externalConnected,
-                    "karabinerPresent": inventory.karabinerPresent,
-                    "observerCount": physicalHIDObservers.count,
-                    "seized": seized,
-                    "identities": identities.map {
-                        [
-                            "id": $0.id,
-                            "name": $0.defaultName,
-                            "vendor": $0.vendorID,
-                            "productID": $0.productID,
-                            "product": $0.product,
-                            "manufacturer": $0.manufacturer,
-                            "transport": inventory.identityTransports[$0.id] ?? "",
-                        ]
-                    },
-                    "runId": "post-fix7",
-                ]
-            )
-        }
-        // #endregion
 
         // Only retry device opens when not already blocked by Karabiner seize.
         if hidManager != nil, !seized {
             attachPhysicalKeyboardHIDObservers()
         }
 
-        // #region agent log
-        debugInventoryLogCount += 1
-        if debugInventoryLogCount <= 3 {
-            agentDebugLog(
-                hypothesisId: "A",
-                location: "KeystrokeMonitor.refreshKeyboardInventory",
-                message: "keyboard_inventory",
-                data: [
-                    "externalConnected": inventory.externalConnected,
-                    "karabinerPresent": inventory.karabinerPresent,
-                    "deviceCount": inventory.devices.count,
-                    "builtinIDs": inventory.builtinRegistryIDs.map { Int($0) }.sorted(),
-                    "externalIDs": inventory.externalRegistryIDs.map { Int($0) }.sorted(),
-                    "observerCount": physicalHIDObservers.count,
-                    "seized": seized,
-                    "runId": "post-fix4",
-                ]
-            )
-        }
-        // #endregion
     }
 
     /// True when a real external USB/Bluetooth keyboard is present (not Karabiner/Touch Bar).
@@ -1011,52 +672,9 @@ final class KeystrokeMonitor {
         guard let observer = IOHIDDeviceCreate(kCFAllocatorDefault, service) else { return .failed }
         let openResult = IOHIDDeviceOpen(observer, IOOptionBits(kIOHIDOptionsTypeNone))
         if openResult == kIOReturnExclusiveAccess {
-            // #region agent log
-            agentDebugLog(
-                hypothesisId: "G",
-                location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
-                message: "hid_device_exclusive",
-                data: [
-                    "product": product,
-                    "isBuiltin": isBuiltin,
-                    "serviceID": entryID,
-                    "runId": "post-fix5",
-                ]
-            )
-            debugSessionAttachLogCount += 1
-            if debugSessionAttachLogCount <= 16 {
-                sessionDebugLog(
-                    hypothesisId: "A",
-                    location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
-                    message: "hid_attach",
-                    data: [
-                        "product": product,
-                        "isBuiltin": isBuiltin,
-                        "result": "exclusive",
-                        "openResult": Int(openResult),
-                    ]
-                )
-            }
-            // #endregion
             return isBuiltin ? .builtinExclusive : .exclusive
         }
         guard openResult == kIOReturnSuccess else {
-            // #region agent log
-            debugSessionAttachLogCount += 1
-            if debugSessionAttachLogCount <= 16 {
-                sessionDebugLog(
-                    hypothesisId: "A",
-                    location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
-                    message: "hid_attach",
-                    data: [
-                        "product": product,
-                        "isBuiltin": isBuiltin,
-                        "result": "failed",
-                        "openResult": Int(openResult),
-                    ]
-                )
-            }
-            // #endregion
             return .failed
         }
 
@@ -1072,22 +690,6 @@ final class KeystrokeMonitor {
         physicalHIDObserverServiceIDs.insert(entryID)
         physicalHIDObservers.append(observer)
         keyboardLock.unlock()
-        // #region agent log
-        debugSessionAttachLogCount += 1
-        if debugSessionAttachLogCount <= 16 {
-            sessionDebugLog(
-                hypothesisId: "A",
-                location: "KeystrokeMonitor.tryAttachPhysicalKeyboardObserver",
-                message: "hid_attach",
-                data: [
-                    "product": product,
-                    "isBuiltin": isBuiltin,
-                    "result": "opened",
-                    "openResult": Int(openResult),
-                ]
-            )
-        }
-        // #endregion
         return .opened
     }
 
@@ -1095,26 +697,6 @@ final class KeystrokeMonitor {
         guard !didAttemptKarabinerBuiltinRelease else { return }
         didAttemptKarabinerBuiltinRelease = true
         let changed = MacKarabinerBuiltinKeyboardRelease.ensureBuiltinKeyboardIgnored()
-        // #region agent log
-        sessionDebugLog(
-            hypothesisId: "A",
-            location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
-            message: "karabiner_release_devices",
-            data: [
-                "configChanged": changed,
-                "runId": "post-fix7",
-            ]
-        )
-        agentDebugLog(
-            hypothesisId: "I",
-            location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
-            message: "karabiner_release_builtin",
-            data: [
-                "configChanged": changed,
-                "runId": "post-fix7",
-            ]
-        )
-        // #endregion
         // Karabiner reloads async; retry HID open on the input-tap run loop (device callbacks need it).
         scheduleHIDRetryAfterKarabinerRelease(delay: 1.5)
         scheduleHIDRetryAfterKarabinerRelease(delay: 4.0)
@@ -1127,28 +709,6 @@ final class KeystrokeMonitor {
                 guard let self else { return }
                 self.physicalHIDSeizedByKarabiner = false
                 self.attachPhysicalKeyboardHIDObservers()
-                // #region agent log
-                self.sessionDebugLog(
-                    hypothesisId: "A",
-                    location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
-                    message: "hid_retry_after_karabiner_release",
-                    data: [
-                        "delayMs": Int(delay * 1000),
-                        "observerCount": self.physicalHIDObservers.count,
-                        "runId": "post-fix7",
-                    ]
-                )
-                self.agentDebugLog(
-                    hypothesisId: "I",
-                    location: "KeystrokeMonitor.releaseBuiltinKeyboardFromKarabinerIfNeeded",
-                    message: "hid_retry_after_karabiner_release",
-                    data: [
-                        "observerCount": self.physicalHIDObservers.count,
-                        "seized": self.physicalHIDSeizedByKarabiner,
-                        "runId": "post-fix7",
-                    ]
-                )
-                // #endregion
             }
             if let loop = self.tapRunLoop {
                 CFRunLoopPerformBlock(loop, CFRunLoopMode.commonModes.rawValue, work)
@@ -1182,17 +742,6 @@ final class KeystrokeMonitor {
 
         let device = IOHIDElementGetDevice(element)
         if Self.isVirtualOrRemappingKeyboard(device) {
-            // #region agent log
-            debugHIDClaimLogCount += 1
-            if debugHIDClaimLogCount <= 8 {
-                agentDebugLog(
-                    hypothesisId: "F",
-                    location: "KeystrokeMonitor.handlePhysicalHIDKeyboardValue",
-                    message: "hid_ignore_virtual",
-                    data: ["usage": Int(usage), "runId": "post-fix3"]
-                )
-            }
-            // #endregion
             return
         }
         if Self.isTouchBarKeyboard(device) { return }
@@ -1204,22 +753,6 @@ final class KeystrokeMonitor {
         if Self.isBuiltinKeyboardDevice(device) {
             lastBuiltinHIDKeyAt = CFAbsoluteTimeGetCurrent()
             keyboardLock.unlock()
-            // #region agent log
-            debugHIDClaimLogCount += 1
-            if debugHIDClaimLogCount <= 16 {
-                agentDebugLog(
-                    hypothesisId: "G",
-                    location: "KeystrokeMonitor.handlePhysicalHIDKeyboardValue",
-                    message: "hid_builtin_claim",
-                    data: [
-                        "usage": Int(usage),
-                        "product": product,
-                        "countNow": !karabiner,
-                        "runId": "post-fix3",
-                    ]
-                )
-            }
-            // #endregion
             // With Karabiner, only stamp the claim — CGEvent path counts after the delay.
             if !karabiner {
                 onBuiltinKeystroke?()
@@ -1230,48 +763,12 @@ final class KeystrokeMonitor {
             lastExternalHIDIdentity = identity
             lastUsedExternalIdentity = identity
             keyboardLock.unlock()
-            // #region agent log
-            debugSessionHIDLogCount += 1
-            if debugSessionHIDLogCount <= 25 {
-                sessionDebugLog(
-                    hypothesisId: "A",
-                    location: "KeystrokeMonitor.handlePhysicalHIDKeyboardValue",
-                    message: "hid_external_claim",
-                    data: [
-                        "usage": Int(usage),
-                        "product": product,
-                        "keyboardId": identity.id,
-                        "defaultName": identity.defaultName,
-                        "vendorID": identity.vendorID,
-                        "productID": identity.productID,
-                        "karabiner": karabiner,
-                        "countNow": !karabiner,
-                    ]
-                )
-            }
-            // #endregion
             if !karabiner {
                 emitExternalKeystroke(identity)
             }
         }
     }
 
-    // #region agent log
-    private func debugLogMouseButton(event: CGEvent, kind: String) {
-        debugOtherMouseLogCount += 1
-        guard debugOtherMouseLogCount <= 6 else { return }
-        agentDebugLog(
-            hypothesisId: "D",
-            location: "KeystrokeMonitor.mouseButton",
-            message: kind,
-            data: [
-                "buttonNumber": event.getIntegerValueField(.mouseEventButtonNumber),
-                "subtype": event.getIntegerValueField(.mouseEventSubtype),
-                "runId": "post-fix2",
-            ]
-        )
-    }
-    // #endregion
 
     private static func isVirtualOrRemappingKeyboard(_ device: IOHIDDevice?) -> Bool {
         guard let device else { return false }
@@ -1332,23 +829,6 @@ final class KeystrokeMonitor {
         keyboardLock.lock()
         lastUsedExternalIdentity = identity
         keyboardLock.unlock()
-        // #region agent log
-        debugSessionEmitLogCount += 1
-        if debugSessionEmitLogCount <= 25 {
-            sessionDebugLog(
-                hypothesisId: "D",
-                location: "KeystrokeMonitor.emitExternalKeystroke",
-                message: "emit_external",
-                data: [
-                    "keyboardId": identity.id,
-                    "defaultName": identity.defaultName,
-                    "vendorID": identity.vendorID,
-                    "productID": identity.productID,
-                    "product": identity.product,
-                ]
-            )
-        }
-        // #endregion
         onKeystroke?()
         onExternalKeyboardKeystroke?(identity)
     }
@@ -1389,34 +869,6 @@ final class KeystrokeMonitor {
         return usb.count == 1 ? usb.first : nil
     }
 
-    private func logCGEventIdentityFields(_ event: CGEvent, keycode: Int64, kbdType: Int64) {
-        // #region agent log
-        debugSessionCGFieldLogCount += 1
-        guard debugSessionCGFieldLogCount <= 8 else { return }
-        var nonzero: [String: Int] = [:]
-        for field in 0...90 {
-            guard let cgField = CGEventField(rawValue: UInt32(field)) else { continue }
-            let value = event.getIntegerValueField(cgField)
-            if value != 0 {
-                nonzero["f\(field)"] = Int(value)
-            }
-        }
-        sessionDebugLog(
-            hypothesisId: "J",
-            location: "KeystrokeMonitor.handleKeyDown",
-            message: "cgevent_fields",
-            data: [
-                "keycode": keycode,
-                "kbdType": kbdType,
-                "srcPID": event.getIntegerValueField(.eventSourceUnixProcessID),
-                "srcUser": event.getIntegerValueField(.eventSourceUserData),
-                "srcState": event.getIntegerValueField(.eventSourceStateID),
-                "nonzero": nonzero,
-            ]
-        )
-        // #endregion
-    }
-
     private static func identity(from device: IOHIDDevice) -> ExternalKeyboardIdentity {
         let product = (IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String) ?? ""
         let manufacturer = (IOHIDDeviceGetProperty(device, kIOHIDManufacturerKey as CFString) as? String) ?? ""
@@ -1440,25 +892,6 @@ final class KeystrokeMonitor {
 
     private func handleScrollWheel(_ event: CGEvent) {
         let decision = classifyScrollEvent(event)
-        // #region agent log
-        // Separate caps so trackpad flood cannot hide mouse evidence.
-        let logMessage: String
-        let shouldLog: Bool
-        // Keep route spam off during lag debugging; gesture totals + tap windows remain.
-        if decision.isTrackpad {
-            debugTrackpadRouteLogCount += 1
-            shouldLog = false
-            logMessage = "route_trackpad_scroll"
-        } else if decision.ignore {
-            debugMouseRouteLogCount += 1
-            shouldLog = false
-            logMessage = "route_mouse_pixel_ignored"
-        } else {
-            debugMouseRouteLogCount += 1
-            shouldLog = false
-            logMessage = "route_mouse_scroll_candidate"
-        }
-        // #endregion
         if decision.isTrackpad {
             // Momentum = inertia after finger lifts. Latch (`gestureActive_continuous`) also
             // catches mouse pixel companions (~±135) while the gesture flag is still set —
@@ -1467,93 +900,6 @@ final class KeystrokeMonitor {
                 || decision.reason == "momentumPhase"
             let countsContactPixels = !isMomentum
                 && (decision.reason == "scrollPhase" || decision.reason == "mouseSubtype3")
-            let pixels = countsContactPixels ? Self.scrollTravelPixels(from: event) : 0.0
-            // #region agent log
-            if countsContactPixels {
-                debugGestureScrollPixelSum += pixels
-                debugGestureScrollEventCount += 1
-            } else if isMomentum {
-                debugGestureMomentumSkippedSum += Self.scrollTravelPixels(from: event)
-                debugGestureMomentumSkippedCount += 1
-            } else {
-                debugGestureLatchSkippedSum += Self.scrollTravelPixels(from: event)
-                debugGestureLatchSkippedCount += 1
-            }
-            let phaseEnded = decision.scrollPhase == CGScrollPhaseCode.ended.rawValue
-                || decision.scrollPhase == CGScrollPhaseCode.cancelled.rawValue
-                || decision.momentumPhase == CGMomentumPhaseCode.end.rawValue
-            var nsPhaseRaw: UInt = 0
-            var nsMomRaw: UInt = 0
-            if let ns = NSEvent(cgEvent: event) {
-                nsPhaseRaw = ns.phase.rawValue
-                nsMomRaw = ns.momentumPhase.rawValue
-            }
-            if shouldLog {
-                var nsScroll = 0.0
-                if let ns = NSEvent(cgEvent: event) {
-                    nsScroll = abs(ns.scrollingDeltaX) + abs(ns.scrollingDeltaY)
-                }
-                agentDebugLog(
-                    hypothesisId: decision.hypothesisId,
-                    location: "KeystrokeMonitor.handleScrollWheel",
-                    message: logMessage,
-                    data: [
-                        "runId": "post-fix-misattr-lag",
-                        "tpN": debugTrackpadRouteLogCount,
-                        "mouseN": debugMouseRouteLogCount,
-                        "reason": decision.reason,
-                        "cont": decision.continuous,
-                        "precise": decision.precise,
-                        "nsSub": decision.nsSubtype,
-                        "mouseSub": decision.mouseSubtype,
-                        "phase": decision.scrollPhase,
-                        "mom": decision.momentumPhase,
-                        "nsPhase": nsPhaseRaw,
-                        "nsMom": nsMomRaw,
-                        "isMomentum": isMomentum,
-                        "countsPixels": countsContactPixels,
-                        "line1": decision.line1,
-                        "line2": decision.line2,
-                        "pt1": decision.point1,
-                        "pt2": decision.point2,
-                        "nsScroll": nsScroll,
-                        "pixelsAdded": pixels,
-                        "rawNsScroll": nsScroll,
-                        "scale": Self.trackpadScrollTravelScale,
-                        "gestureSum": debugGestureScrollPixelSum,
-                        "gestureEvents": debugGestureScrollEventCount,
-                        "momSkippedSum": debugGestureMomentumSkippedSum,
-                        "latchSkippedSum": debugGestureLatchSkippedSum,
-                    ]
-                )
-            }
-            if phaseEnded {
-                agentDebugLog(
-                    hypothesisId: "H",
-                    location: "KeystrokeMonitor.handleScrollWheel",
-                    message: "trackpad_gesture_pixel_total",
-                    data: [
-                        "runId": "post-fix-misattr-lag",
-                        "gestureSum": debugGestureScrollPixelSum,
-                        "gestureEvents": debugGestureScrollEventCount,
-                        "momSkippedSum": debugGestureMomentumSkippedSum,
-                        "momSkippedEvents": debugGestureMomentumSkippedCount,
-                        "latchSkippedSum": debugGestureLatchSkippedSum,
-                        "latchSkippedEvents": debugGestureLatchSkippedCount,
-                        "endReason": decision.reason,
-                        "phase": decision.scrollPhase,
-                        "mom": decision.momentumPhase,
-                        "scale": Self.trackpadScrollTravelScale,
-                    ]
-                )
-                debugGestureScrollPixelSum = 0
-                debugGestureScrollEventCount = 0
-                debugGestureMomentumSkippedSum = 0
-                debugGestureMomentumSkippedCount = 0
-                debugGestureLatchSkippedSum = 0
-                debugGestureLatchSkippedCount = 0
-            }
-            // #endregion
             // Only refresh companion suppress during finger contact — not for the whole
             // momentum coast (that was blocking immediate external mouse notches).
             if countsContactPixels || decision.reason == "scrollPhase" {
@@ -1564,26 +910,6 @@ final class KeystrokeMonitor {
             }
             return
         }
-        // #region agent log
-        if shouldLog {
-            agentDebugLog(
-                hypothesisId: decision.hypothesisId,
-                location: "KeystrokeMonitor.handleScrollWheel",
-                message: logMessage,
-                data: [
-                    "runId": "post-fix-magnitude",
-                    "tpN": debugTrackpadRouteLogCount,
-                    "mouseN": debugMouseRouteLogCount,
-                    "reason": decision.reason,
-                    "cont": decision.continuous,
-                    "precise": decision.precise,
-                    "phase": decision.scrollPhase,
-                    "line1": decision.line1,
-                    "pt1": decision.point1,
-                ]
-            )
-        }
-        // #endregion
         if decision.ignore {
             // Continuous/precise mouse wheel (G502 etc.): often NO discrete companion event.
             // Do not treat as trackpad — but still count notches (line ticks / point quantize).
@@ -1607,7 +933,6 @@ final class KeystrokeMonitor {
         /// Continuous/precise mouse stream with no gesture phase — not trackpad; count as mouse bumps.
         let ignore: Bool
         let reason: String
-        let hypothesisId: String
         let continuous: Int64
         let precise: Bool
         let nsSubtype: Int
@@ -1669,14 +994,12 @@ final class KeystrokeMonitor {
         func result(
             isTrackpad: Bool,
             ignore: Bool = false,
-            reason: String,
-            hypothesisId: String
+            reason: String
         ) -> ScrollClassification {
             ScrollClassification(
                 isTrackpad: isTrackpad,
                 ignore: ignore,
                 reason: reason,
-                hypothesisId: hypothesisId,
                 continuous: continuous,
                 precise: precise,
                 nsSubtype: nsSubtype,
@@ -1692,7 +1015,7 @@ final class KeystrokeMonitor {
 
         // Same subtype used for working trackpad clicks/travel.
         if mouseSubtype == Self.trackpadTouchSubtype {
-            return result(isTrackpad: true, reason: "mouseSubtype3", hypothesisId: "F")
+            return result(isTrackpad: true, reason: "mouseSubtype3")
         }
 
         let cgScroll = CGScrollPhaseCode(rawValue: scrollPhaseRaw)
@@ -1737,11 +1060,11 @@ final class KeystrokeMonitor {
         scrollLock.unlock()
 
         if scrollBegan || scrollChanged || scrollMayBegin || scrollEnded || scrollCancelled {
-            return result(isTrackpad: true, reason: "scrollPhase", hypothesisId: "C")
+            return result(isTrackpad: true, reason: "scrollPhase")
         }
 
         if momentumBegan || momentumChanged || momentumEnded {
-            return result(isTrackpad: true, reason: "momentumPhase", hypothesisId: "C")
+            return result(isTrackpad: true, reason: "momentumPhase")
         }
 
         // Mid-gesture trackpad deltas often arrive as continuous/precise with empty phase.
@@ -1752,7 +1075,7 @@ final class KeystrokeMonitor {
             let trackpadAgo = CFAbsoluteTimeGetCurrent() - lastTrackpadScrollAt
             if trackpadAgo < Self.staleTrackpadGestureLatch {
                 scrollLock.unlock()
-                return result(isTrackpad: true, reason: "gestureActive_continuous", hypothesisId: "G")
+                return result(isTrackpad: true, reason: "gestureActive_continuous")
             }
             trackpadScrollGestureActive = false
             scrollLock.unlock()
@@ -1761,10 +1084,10 @@ final class KeystrokeMonitor {
         // Continuous/precise without an active trackpad gesture = mouse wheel stream.
         // Many gaming mice never emit a discrete companion — count on the ignore path.
         if continuous != 0 || precise {
-            return result(isTrackpad: false, ignore: true, reason: "continuous_mouse_wheel", hypothesisId: "A")
+            return result(isTrackpad: false, ignore: true, reason: "continuous_mouse_wheel")
         }
 
-        return result(isTrackpad: false, reason: "discrete_mouse", hypothesisId: "E")
+        return result(isTrackpad: false, reason: "discrete_mouse")
     }
 
     private func isTrackpadScrollEvent(_ event: CGEvent) -> Bool {
@@ -1782,30 +1105,10 @@ final class KeystrokeMonitor {
         let trackpadAgo = CFAbsoluteTimeGetCurrent() - lastTrackpadScrollAt
         scrollLock.unlock()
         if trackpadAgo < Self.trackpadScrollCompanionWindow {
-            // #region agent log
-            if debugMouseRouteLogCount <= 40 {
-                agentDebugLog(
-                    hypothesisId: "E",
-                    location: "KeystrokeMonitor.countMouseScrollBumpIfNeeded",
-                    message: "mouse_bump_suppressed_by_trackpad_window",
-                    data: ["trackpadAgoMs": Int(trackpadAgo * 1000)]
-                )
-            }
-            // #endregion
             return
         }
         let bumps = takeScrollBumpsAcceptingDiscrete(timestamp: timestamp)
         if bumps > 0 {
-            // #region agent log
-            if debugMouseRouteLogCount <= 40 {
-                agentDebugLog(
-                    hypothesisId: "E",
-                    location: "KeystrokeMonitor.countMouseScrollBumpIfNeeded",
-                    message: "mouse_bump_counted",
-                    data: ["bumps": bumps, "runId": "post-fix"]
-                )
-            }
-            // #endregion
             onScrollBumps?(bumps)
         }
     }

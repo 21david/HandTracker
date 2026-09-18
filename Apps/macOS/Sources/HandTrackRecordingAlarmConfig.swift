@@ -206,3 +206,99 @@ enum HandTrackActivityKind: String, CaseIterable, Identifiable, Hashable {
         }
     }
 }
+
+// MARK: - Per-keyboard limits (Keyboards tab)
+
+enum KeyboardLimitWindowHours: Int, CaseIterable, Identifiable, Codable {
+    case one = 1
+    case three = 3
+    case six = 6
+    case twelve = 12
+    case twentyFour = 24
+
+    var id: Int { rawValue }
+
+    var menuTitle: String {
+        self == .one ? "1 hour" : "\(rawValue) hours"
+    }
+}
+
+enum KeyboardLimitUnit: String, CaseIterable, Identifiable, Codable {
+    case keystrokes
+    case minutes
+
+    var id: String { rawValue }
+
+    var menuTitle: String {
+        switch self {
+        case .keystrokes: return "keystrokes"
+        case .minutes: return "minutes"
+        }
+    }
+}
+
+struct KeyboardLimitRule: Codable, Equatable {
+    var enabled: Bool
+    var windowHours: Int
+    var unit: KeyboardLimitUnit
+    var threshold: Int
+
+    static let disabledDefault = KeyboardLimitRule(
+        enabled: false,
+        windowHours: KeyboardLimitWindowHours.six.rawValue,
+        unit: .minutes,
+        threshold: 30
+    )
+
+    var resolvedWindowHours: Int {
+        KeyboardLimitWindowHours(rawValue: windowHours)?.rawValue
+            ?? KeyboardLimitWindowHours.six.rawValue
+    }
+}
+
+enum KeyboardLimitClock {
+    static func rollingStart(hours: Int, now: Date) -> Date {
+        now.addingTimeInterval(-TimeInterval(max(1, hours) * 3600))
+    }
+}
+
+enum HandTrackKeyboardLimitsStorage {
+    static let rulesKey = "HandTrack.keyboardLimits.rulesById"
+
+    static func loadRules() -> [String: KeyboardLimitRule] {
+        guard let data = UserDefaults.standard.data(forKey: rulesKey),
+              let decoded = try? JSONDecoder().decode([String: KeyboardLimitRule].self, from: data)
+        else { return [:] }
+        return decoded
+    }
+
+    static func saveRules(_ rules: [String: KeyboardLimitRule]) {
+        guard let data = try? JSONEncoder().encode(rules) else { return }
+        UserDefaults.standard.set(data, forKey: rulesKey)
+    }
+}
+
+struct KeyboardLimitStatus: Equatable {
+    var rule: KeyboardLimitRule
+    var keystrokes: Int
+    var usedAmount: Int
+    var resetsAt: Date?
+    var isOver: Bool
+
+    var resetCaption: String? {
+        guard isOver, let resetsAt else { return nil }
+        return "Limit resets at \(Self.timeFormatter.string(from: resetsAt))"
+    }
+
+    var usageCaption: String {
+        let unit = rule.unit.menuTitle
+        return "\(usedAmount.formatted()) of \(max(1, rule.threshold).formatted()) \(unit)"
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
+}

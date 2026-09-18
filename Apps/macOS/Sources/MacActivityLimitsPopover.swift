@@ -89,17 +89,6 @@ struct MacActivityLimitsPopover: View {
 
     private func commitAndDismiss() {
         draft.saveToUserDefaults()
-        // #region agent log
-        MacAgentDebugLog.log(
-            hypothesisId: "G",
-            location: "MacActivityLimitsPopover.swift:commitAndDismiss",
-            message: "activity limits committed on Done",
-            data: [
-                "keysThreshold": Int(draft.keys.threshold.rounded()),
-                "masterEnabled": draft.masterEnabled,
-            ]
-        )
-        // #endregion
         onChange()
         dismiss()
     }

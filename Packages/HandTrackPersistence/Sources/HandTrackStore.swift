@@ -75,16 +75,6 @@ final class HandTrackStore: ObservableObject {
     private var dirtyBuiltinTrackpadScrollMinutes = Set<TimeInterval>()
     private static let persistFlushDelay: TimeInterval = 2.0
 
-    // #region agent log
-    private var debugSaveSampleCount = 0
-    private var debugSaveTotalNanos: UInt64 = 0
-    private var debugPublishCount = 0
-    private var debugRecordCount = 0
-    private var debugSessionRecordLogCount = 0
-    private var debugSessionAttribLogCount = 0
-    private static let debugLogPath = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-b2bfc5.log"
-    private static let debugLogQueue = DispatchQueue(label: "HandTrack.debugStoreLog")
-    // #endregion
 
     /// For rare non-live mutations (load, migrations) that views may read without a pulse bump.
     func notifyStructuralChange() {
@@ -236,22 +226,6 @@ final class HandTrackStore: ObservableObject {
             create: { KeystrokeMinuteBucket(minuteStart: minuteStart, keyCount: count) }
         )
         markDirtyKeystroke(minuteStart)
-        // #region agent log
-        debugRecordCount += count
-        if debugRecordCount <= 8 || debugRecordCount % 50 == 0 {
-            agentDebugLog(
-                hypothesisId: "P1",
-                location: "HandTrackStore.recordKeystrokes",
-                message: "record_keystroke",
-                data: [
-                    "runId": "perf-responsive",
-                    "n": debugRecordCount,
-                    "batch": count,
-                    "publishN": debugPublishCount,
-                ]
-            )
-        }
-        // #endregion
         publishLiveKind(.keystrokes, deferForScrollTravel: false)
         #if os(macOS)
         livePulse.noteDebug(.keystrokes, amount: Double(count))
@@ -321,22 +295,6 @@ final class HandTrackStore: ObservableObject {
             displayName: displayName(forExternalKeyboard: identity.id),
             amount: Double(count)
         )
-        // #region agent log
-        debugSessionRecordLogCount += 1
-        if debugSessionRecordLogCount <= 25 {
-            sessionStoreDebugLog(
-                hypothesisId: "E",
-                location: "HandTrackStore.recordExternalKeyboardKeystrokes",
-                message: "recorded_external_keyboard",
-                data: [
-                    "keyboardId": identity.id,
-                    "defaultName": identity.defaultName,
-                    "displayName": displayName(forExternalKeyboard: identity.id),
-                    "count": count,
-                ]
-            )
-        }
-        // #endregion
         #endif
     }
 
@@ -427,25 +385,6 @@ final class HandTrackStore: ObservableObject {
         } else if leftover > 0 {
             merged[ExternalKeyboardIdentity.unknown.id, default: 0] += leftover
         }
-        // #region agent log
-        debugSessionAttribLogCount += 1
-        if debugSessionAttribLogCount <= 20 {
-            sessionStoreDebugLog(
-                hypothesisId: "F",
-                location: "HandTrackStore.attributedExternalKeyboardKeystrokes",
-                message: "bar_breakdown_attrib",
-                data: [
-                    "foldIntoKinesis": foldIntoKinesis,
-                    "leftover": leftover,
-                    "unknownCount": unknownCount,
-                    "kinesisID": kinesisID,
-                    "rowIds": merged.filter { $0.value > 0 }.map(\.key).sorted(),
-                    "lumped": lumpedKeystrokes,
-                    "attributed": attributed,
-                ]
-            )
-        }
-        // #endregion
         return merged
             .filter { $0.value > 0 }
             .map { (id: $0.key, keystrokes: $0.value) }
@@ -785,9 +724,6 @@ final class HandTrackStore: ObservableObject {
 
         guard dirtyCount > 0 else { return }
 
-        // #region agent log
-        let t0 = DispatchTime.now().uptimeNanoseconds
-        // #endregion
         for bucket in keystrokes { save(bucket) }
         for bucket in mouseClicks { saveMouseClick(bucket) }
         for bucket in mouseTravel { saveMouseTravel(bucket) }
@@ -797,13 +733,6 @@ final class HandTrackStore: ObservableObject {
         for bucket in builtinClicks { saveBuiltinTrackpadClick(bucket) }
         for bucket in builtinTravel { saveBuiltinTrackpadTravel(bucket) }
         for bucket in builtinScroll { saveBuiltinTrackpadScroll(bucket) }
-        // #region agent log
-        debugSampleSave(
-            kind: "coalesced_flush",
-            startedNanos: t0,
-            extra: ["dirty": dirtyCount, "persistDelaySec": Self.persistFlushDelay]
-        )
-        // #endregion
     }
 
     func builtinKeyboardActivityInLastHours(_ hours: Int, reference: Date = Date()) -> Bool {
@@ -880,20 +809,6 @@ final class HandTrackStore: ObservableObject {
     private func flushPendingLiveKinds(reason: String, deferred: Bool) {
         #if os(macOS)
         if Self.shouldDeferLiveUIFlush() {
-            // #region agent log
-            agentDebugLog(
-                hypothesisId: "P3",
-                location: "HandTrackStore.flushPendingLiveKinds",
-                message: "live_publish_deferred_scroll",
-                data: [
-                    "runId": "perf-scroll",
-                    "reason": reason,
-                    "deferred": deferred,
-                    "pendingLive": pendingLiveKinds.count,
-                    "pendingDeferred": pendingDeferredLiveKinds.count,
-                ]
-            )
-            // #endregion
             scheduleFlushAfterScrollGate(deferred: deferred)
             return
         }
@@ -913,46 +828,10 @@ final class HandTrackStore: ObservableObject {
         } else {
             lastLivePublishAt = CFAbsoluteTimeGetCurrent()
         }
-        let started = CFAbsoluteTimeGetCurrent()
-        // #region agent log
-        debugPublishCount += 1
-        if debugPublishCount <= 40 || debugPublishCount % 20 == 0 {
-            agentDebugLog(
-                hypothesisId: "P1",
-                location: "HandTrackStore.flushPendingLiveKinds",
-                message: "live_publish",
-                data: [
-                    "runId": "perf-scroll",
-                    "n": debugPublishCount,
-                    "recordN": debugRecordCount,
-                    "reason": reason,
-                    "deferredPath": deferred,
-                    "kinds": kinds.map { String(describing: $0) }.sorted(),
-                    "kindCount": kinds.count,
-                ]
-            )
-        }
-        // #endregion
         #if os(macOS)
         for kind in kinds {
             livePulse.bump(kind)
         }
-        // #region agent log
-        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
-        if elapsedMs >= 8 || debugPublishCount <= 10 {
-            agentDebugLog(
-                hypothesisId: "P4",
-                location: "HandTrackStore.flushPendingLiveKinds",
-                message: "live_publish_cost",
-                data: [
-                    "runId": "perf-scroll",
-                    "ms": elapsedMs,
-                    "reason": reason,
-                    "kindCount": kinds.count,
-                ]
-            )
-        }
-        // #endregion
         #else
         objectWillChange.send()
         #endif
@@ -984,95 +863,6 @@ final class HandTrackStore: ObservableObject {
     }
     #endif
 
-    // #region agent log
-    private func debugSampleSave(kind: String, startedNanos: UInt64, extra: [String: Any] = [:]) {
-        let elapsed = DispatchTime.now().uptimeNanoseconds &- startedNanos
-        debugSaveSampleCount += 1
-        debugSaveTotalNanos += elapsed
-        if debugSaveSampleCount <= 20 || debugSaveSampleCount % 20 == 0 || elapsed > 2_000_000 {
-            var data: [String: Any] = [
-                "runId": "post-fix-lag",
-                "kind": kind,
-                "saveUs": Int(elapsed / 1_000),
-                "n": debugSaveSampleCount,
-                "avgUs": Int(debugSaveTotalNanos / UInt64(debugSaveSampleCount) / 1_000),
-                "onMain": Thread.isMainThread,
-            ]
-            for (k, v) in extra { data[k] = v }
-            agentDebugLog(
-                hypothesisId: "L2",
-                location: "HandTrackStore.saveSample",
-                message: "sqlite_save_sample",
-                data: data
-            )
-        }
-    }
-
-    private func agentDebugLog(
-        hypothesisId: String,
-        location: String,
-        message: String,
-        data: [String: Any] = [:]
-    ) {
-        var payload: [String: Any] = [
-            "sessionId": "b2bfc5",
-            "hypothesisId": hypothesisId,
-            "location": location,
-            "message": message,
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "data": data,
-        ]
-        guard JSONSerialization.isValidJSONObject(payload),
-              let json = try? JSONSerialization.data(withJSONObject: payload),
-              let line = String(data: json, encoding: .utf8)
-        else { return }
-        let path = Self.debugLogPath
-        Self.debugLogQueue.async {
-            if !FileManager.default.fileExists(atPath: path) {
-                FileManager.default.createFile(atPath: path, contents: nil)
-            }
-            guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return }
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            if let bytes = (line + "\n").data(using: .utf8) {
-                try? handle.write(contentsOf: bytes)
-            }
-        }
-    }
-
-    private func sessionStoreDebugLog(
-        hypothesisId: String,
-        location: String,
-        message: String,
-        data: [String: Any] = [:]
-    ) {
-        var payload: [String: Any] = [
-            "sessionId": "869910",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesisId,
-            "location": location,
-            "message": message,
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "data": data,
-        ]
-        guard JSONSerialization.isValidJSONObject(payload),
-              let json = try? JSONSerialization.data(withJSONObject: payload),
-              let line = String(data: json, encoding: .utf8)
-        else { return }
-        let path = "/Users/david1/Documents/Code/Cursor/HandTrack/.cursor/debug-869910.log"
-        Self.debugLogQueue.async {
-            if !FileManager.default.fileExists(atPath: path) {
-                FileManager.default.createFile(atPath: path, contents: nil)
-            }
-            guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return }
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            if let bytes = (line + "\n").data(using: .utf8) {
-                try? handle.write(contentsOf: bytes)
-            }
-        }
-    }
-    // #endregion
 
     func scrollsInLastMinutes(_ minutes: Int, reference: Date = Date()) -> Int {
         let window = max(1, minutes)
@@ -1163,6 +953,34 @@ final class HandTrackStore: ObservableObject {
         return keystrokeBuckets.reduce(0) { sum, bucket in
             guard bucket.minuteStart >= start, bucket.minuteStart <= reference else { return sum }
             return sum + bucket.keyCount
+        }
+    }
+
+    func keystrokes(forKeyboard keyboardId: String, from start: Date, through end: Date) -> Int {
+        keyboardKeystrokeMinuteCounts(forKeyboard: keyboardId, from: start, through: end)
+            .reduce(0) { $0 + $1.count }
+    }
+
+    func keyboardKeystrokeMinuteCounts(
+        forKeyboard keyboardId: String,
+        from start: Date,
+        through end: Date
+    ) -> [(minuteStart: Date, count: Int)] {
+        if keyboardId == ExternalKeyboardIdentity.macbookBuiltin.id {
+            return builtinKeyboardBuckets.compactMap { bucket in
+                guard bucket.minuteStart >= start, bucket.minuteStart <= end, bucket.keyCount > 0 else {
+                    return nil
+                }
+                return (bucket.minuteStart, bucket.keyCount)
+            }
+        }
+        return externalKeyboardBuckets.compactMap { bucket in
+            guard bucket.keyboardId == keyboardId,
+                  bucket.minuteStart >= start,
+                  bucket.minuteStart <= end,
+                  bucket.keyCount > 0
+            else { return nil }
+            return (bucket.minuteStart, bucket.keyCount)
         }
     }
 

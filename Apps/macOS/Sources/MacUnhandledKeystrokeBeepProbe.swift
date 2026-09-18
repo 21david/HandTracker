@@ -11,27 +11,6 @@ enum MacUnhandledKeystrokeBeepProbe {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
             let allow = Self.shouldAllowKeyDown(event)
-            let responders = NSApp.windows.map { window -> String in
-                let fr = window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
-                return "\(type(of: window))#\(window.windowNumber)=\(fr)"
-            }
-            // #region agent log
-            MacAgentDebugLog.log(
-                hypothesisId: "F",
-                location: "MacUnhandledKeystrokeBeepProbe.swift:localKeyDown",
-                message: allow ? "keyDown passed (text input)" : "keyDown swallowed to prevent system beep",
-                data: [
-                    "keyCode": Int(event.keyCode),
-                    "chars": event.charactersIgnoringModifiers ?? "",
-                    "appActive": NSApp.isActive,
-                    "eventWindowClass": event.window.map { String(describing: type(of: $0)) } ?? "nil",
-                    "eventWindowFirstResponder": event.window?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil",
-                    "keyWindowFirstResponder": NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil",
-                    "windowResponders": responders.joined(separator: " | "),
-                    "allow": allow,
-                ]
-            )
-            // #endregion
             return allow ? event : nil
         }
     }

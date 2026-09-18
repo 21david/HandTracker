@@ -47,28 +47,12 @@ private struct MacKeystrokeFiveMinuteChartRender: View, Equatable {
     private var excess: Double { resolution.scaledExcess(fiveMinuteExcess: LiveKeystrokeChart.fiveMinuteExcess) }
 
     var body: some View {
-        // #region agent log
-        let bodyStarted = CFAbsoluteTimeGetCurrent()
-        // #endregion
         let slots = store.keystrokesByFiveMinuteSlotsTrailing(
             reference: referenceDate,
             count: resolution.barCount,
             minutesPerSlot: resolution.minutesPerBar
         )
         let boundaries = Array(0...slots.count)
-        // #region agent log
-        let prepMs = Int((CFAbsoluteTimeGetCurrent() - bodyStarted) * 1000)
-        let _ = {
-            if prepMs >= 5 {
-                MacAgentDebugLog.log(
-                    hypothesisId: "P4",
-                    location: "MacKeystrokeFiveMinuteChartRender.body",
-                    message: "chart_prep_cost",
-                    data: ["runId": "perf-scroll", "ms": prepMs, "bars": slots.count]
-                )
-            }
-        }()
-        // #endregion
 
         Chart {
             baselineMark()

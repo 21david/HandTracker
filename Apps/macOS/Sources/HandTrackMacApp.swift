@@ -11,9 +11,7 @@ struct HandTrackMacApp: App {
             HandTrackStore.shouldDeferLiveUIFlush = {
                 MacDashboardScrollGate.isScrolling
             }
-            // #region agent log
             MacUnhandledKeystrokeBeepProbe.startIfNeeded()
-            // #endregion
         }
     }
     
