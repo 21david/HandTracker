@@ -137,7 +137,9 @@ private struct MacUsageBreakdownPopupView: View {
 
     private var keyboardBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let macbookKeyboardMinutes {
+            if let macbookKeyboardMinutes,
+               !keyboardRows.contains(where: { $0.id == ExternalKeyboardIdentity.macbookBuiltin.id })
+            {
                 row(prefix: "MacBook keyboard", minutes: macbookKeyboardMinutes)
             }
             ForEach(keyboardRows) { keyboard in
@@ -384,9 +386,10 @@ enum MacExternalKeyboardBreakdown {
         lumpedKeystrokes: Int,
         perKeyboard: [String: Int],
         windowStart: Date,
-        rates: MacEstimatedWorkloadMinutes.Rates
+        rates: MacEstimatedWorkloadMinutes.Rates,
+        macbookMinutes: Int = 0
     ) -> [MacUsageBreakdownKeyboardRow] {
-        store.attributedExternalKeyboardKeystrokes(
+        var rows = store.attributedExternalKeyboardKeystrokes(
             lumpedKeystrokes: lumpedKeystrokes,
             perKeyboard: perKeyboard,
             windowStart: windowStart
@@ -401,6 +404,16 @@ enum MacExternalKeyboardBreakdown {
                 )
             )
         }
+        if macbookMinutes >= 5 {
+            rows.append(
+                MacUsageBreakdownKeyboardRow(
+                    id: ExternalKeyboardIdentity.macbookBuiltin.id,
+                    title: store.displayName(forExternalKeyboard: ExternalKeyboardIdentity.macbookBuiltin.id),
+                    minutes: macbookMinutes
+                )
+            )
+        }
+        return store.sortByKeyboardDisplayOrder(rows, id: \.id)
     }
 }
 

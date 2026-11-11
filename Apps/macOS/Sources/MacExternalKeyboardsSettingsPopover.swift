@@ -101,8 +101,7 @@ struct MacExternalKeyboardsSettingsPopover: View {
     @FocusState private var focusedField: String?
 
     private var profiles: [ExternalKeyboardProfile] {
-        [ExternalKeyboardProfile(identity: .macbookBuiltin, at: .distantPast)]
-            + store.allExternalKeyboardProfiles()
+        store.orderedDetectedKeyboardProfiles()
     }
 
     var body: some View {
@@ -113,6 +112,7 @@ struct MacExternalKeyboardsSettingsPopover: View {
             Text(
                 "MacBook plus every external keyboard HandTrack has recorded. " +
                 "A row lighting up is the keyboard just counted in tracking. " +
+                "Arrows change the list order — bar-graph right-click uses the same order. " +
                 "Optional limits beep on each key of that board until the window resets."
             )
             .font(.caption)
@@ -150,8 +150,8 @@ struct MacExternalKeyboardsSettingsPopover: View {
     @ViewBuilder
     private var keyboardList: some View {
         let rows = VStack(alignment: .leading, spacing: 8) {
-            ForEach(profiles) { profile in
-                keyboardRow(profile)
+            ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
+                keyboardRow(profile, index: index)
             }
         }
         if profiles.count > 7 {
@@ -164,12 +164,13 @@ struct MacExternalKeyboardsSettingsPopover: View {
         }
     }
 
-    private func keyboardRow(_ profile: ExternalKeyboardProfile) -> some View {
+    private func keyboardRow(_ profile: ExternalKeyboardProfile, index: Int) -> some View {
         let flashing = flashingIDs.contains(profile.id)
         let editing = editingID == profile.id
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center, spacing: 8) {
+                    reorderControls(id: profile.id, index: index)
                     if editing {
                         TextField("Name", text: $draftName)
                             .textFieldStyle(.roundedBorder)
@@ -219,6 +220,39 @@ struct MacExternalKeyboardsSettingsPopover: View {
                 .strokeBorder(flashing ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: flashing ? 2 : 1)
         )
         .animation(.easeOut(duration: 0.12), value: flashing)
+    }
+
+    private func reorderControls(id: String, index: Int) -> some View {
+        VStack(spacing: 0) {
+            Button {
+                moveProfile(id: id, by: -1)
+            } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .disabled(index == 0)
+            .help("Move up")
+            Button {
+                moveProfile(id: id, by: 1)
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .disabled(index >= profiles.count - 1)
+            .help("Move down")
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    private func moveProfile(id: String, by delta: Int) {
+        var ids = profiles.map(\.id)
+        guard let index = ids.firstIndex(of: id) else { return }
+        let next = index + delta
+        guard ids.indices.contains(next) else { return }
+        ids.swapAt(index, next)
+        store.setKeyboardDisplayOrder(ids)
     }
 
     private func hardwareCaption(_ profile: ExternalKeyboardProfile) -> String {

@@ -74,6 +74,7 @@ final class HandTrackStore: ObservableObject {
     private var dirtyBuiltinTrackpadTravelMinutes = Set<TimeInterval>()
     private var dirtyBuiltinTrackpadScrollMinutes = Set<TimeInterval>()
     private static let persistFlushDelay: TimeInterval = 2.0
+    private static let keyboardDisplayOrderKey = "HandTrack.keyboardDisplayOrder"
 
 
     /// For rare non-live mutations (load, migrations) that views may read without a pulse bump.
@@ -323,6 +324,9 @@ final class HandTrackStore: ObservableObject {
     }
 
     func displayName(forExternalKeyboard id: String) -> String {
+        if id == ExternalKeyboardIdentity.macbookBuiltin.id {
+            return ExternalKeyboardIdentity.macbookBuiltin.defaultName
+        }
         if let profile = externalKeyboardProfiles[id] {
             return profile.displayName
         }
@@ -350,6 +354,54 @@ final class HandTrackStore: ObservableObject {
                 if lhs.firstSeen != rhs.firstSeen { return lhs.firstSeen < rhs.firstSeen }
                 return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
             }
+    }
+
+    /// MacBook plus every stored external board, in the Keyboards-tab order.
+    func orderedDetectedKeyboardProfiles() -> [ExternalKeyboardProfile] {
+        let macbook = ExternalKeyboardProfile(identity: .macbookBuiltin, at: .distantPast)
+        let all = [macbook] + allExternalKeyboardProfiles()
+        return sortByKeyboardDisplayOrder(all, id: \.id)
+    }
+
+    func setKeyboardDisplayOrder(_ ids: [String]) {
+        var unique: [String] = []
+        unique.reserveCapacity(ids.count)
+        for id in ids where !unique.contains(id) {
+            unique.append(id)
+        }
+        UserDefaults.standard.set(unique, forKey: Self.keyboardDisplayOrderKey)
+        notifyStructuralChange()
+    }
+
+    func sortByKeyboardDisplayOrder<T>(_ items: [T], id: KeyPath<T, String>) -> [T] {
+        let ranks = keyboardDisplayOrderRanks(including: items.map { $0[keyPath: id] })
+        return items.sorted { lhs, rhs in
+            (ranks[lhs[keyPath: id]] ?? .max) < (ranks[rhs[keyPath: id]] ?? .max)
+        }
+    }
+
+    private func keyboardDisplayOrderRanks(including ids: [String]) -> [String: Int] {
+        let saved = UserDefaults.standard.stringArray(forKey: Self.keyboardDisplayOrderKey) ?? []
+        var rank: [String: Int] = [:]
+        for (index, id) in saved.enumerated() {
+            rank[id] = index
+        }
+        var next = saved.count
+        let unsaved = ids.filter { rank[$0] == nil }
+        let orderedUnsaved = unsaved.sorted { lhs, rhs in
+            if lhs == ExternalKeyboardIdentity.macbookBuiltin.id { return true }
+            if rhs == ExternalKeyboardIdentity.macbookBuiltin.id { return false }
+            let leftSeen = externalKeyboardProfiles[lhs]?.firstSeen ?? .distantFuture
+            let rightSeen = externalKeyboardProfiles[rhs]?.firstSeen ?? .distantFuture
+            if leftSeen != rightSeen { return leftSeen < rightSeen }
+            return displayName(forExternalKeyboard: lhs)
+                .localizedCaseInsensitiveCompare(displayName(forExternalKeyboard: rhs)) == .orderedAscending
+        }
+        for id in orderedUnsaved {
+            rank[id] = next
+            next += 1
+        }
+        return rank
     }
 
     /// Leftover lumped external keys (no per-device buckets) stay “External keyboard”
@@ -385,14 +437,10 @@ final class HandTrackStore: ObservableObject {
         } else if leftover > 0 {
             merged[ExternalKeyboardIdentity.unknown.id, default: 0] += leftover
         }
-        return merged
+        let items = merged
             .filter { $0.value > 0 }
             .map { (id: $0.key, keystrokes: $0.value) }
-            .sorted { lhs, rhs in
-                if lhs.keystrokes != rhs.keystrokes { return lhs.keystrokes > rhs.keystrokes }
-                return displayName(forExternalKeyboard: lhs.id)
-                    .localizedCaseInsensitiveCompare(displayName(forExternalKeyboard: rhs.id)) == .orderedAscending
-            }
+        return sortByKeyboardDisplayOrder(items, id: \.id)
     }
 
     @discardableResult

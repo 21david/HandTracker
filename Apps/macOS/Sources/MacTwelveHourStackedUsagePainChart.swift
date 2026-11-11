@@ -639,7 +639,8 @@ private struct TwelveHourColumnContextMenuOverlay: View {
                         lumpedKeystrokes: slot.keystrokeCount,
                         perKeyboard: slot.externalKeyboardKeystrokes,
                         windowStart: slot.hourStart,
-                        rates: rates
+                        rates: rates,
+                        macbookMinutes: minutes.macbookKeyboard
                     )
                 )
             }

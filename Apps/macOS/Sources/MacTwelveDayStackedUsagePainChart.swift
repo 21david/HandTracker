@@ -738,7 +738,8 @@ private struct TwelveDayColumnContextMenuOverlay: View {
                         lumpedKeystrokes: slot.keystrokeCount,
                         perKeyboard: slot.externalKeyboardKeystrokes,
                         windowStart: slot.dayStart,
-                        rates: workloadRates
+                        rates: workloadRates,
+                        macbookMinutes: minutes.macbookKeyboard
                     )
                 )
             }
